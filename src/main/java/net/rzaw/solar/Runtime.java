@@ -8,12 +8,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Properties;
 
-import net.rzaw.solar.charts.ChartProducer;
 import net.rzaw.solar.csvimport.CSVImporter;
 import net.rzaw.solar.csvimport.InstallationEntry;
 
 import org.apache.log4j.Logger;
-import org.joda.time.DateTime;
 
 import com.google.common.base.Preconditions;
 import com.google.common.io.Files;
@@ -48,9 +46,12 @@ public class Runtime
         }
         csvImporter.shutdown();
 
+        LOG.info( "Finished processing directories." );
         // now render the chart images
-        ChartProducer chartProducer = new ChartProducer( properties );
-        chartProducer.render( new DateTime( 2011, 5, 27, 0, 0 ) );
-        chartProducer.shutdown();
+        // LOG.info( "Creating charts.");
+        // ChartProducer chartProducer = new ChartProducer( properties );
+        // chartProducer.render( new DateTime( 2011, 5, 27, 0, 0 ) );
+        // chartProducer.shutdown();
+        // LOG.info( "Finished creating charts.");
     }
 }

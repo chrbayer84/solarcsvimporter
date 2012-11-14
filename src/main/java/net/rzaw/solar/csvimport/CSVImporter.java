@@ -94,6 +94,8 @@ public class CSVImporter
         // process all csv files in this directory
         for ( String csvFileName : installationEntry.getDirectory().list( csvFilter ) )
         {
+            LOG.info( "File to be processed: " + csvFileName );
+
             File csvFile = new File( installationEntry.getDirectory(), csvFileName );
             if ( !databaseProcessor.isDone( csvFile ) )
             {
@@ -101,8 +103,11 @@ public class CSVImporter
                 String oldMd5Sum = databaseProcessor.getMd5Sum( csvFile );
                 // calculate current md5sum from file content
                 String newMd5Sum = DigestUtils.md5Hex( Files.toString( csvFile, Charsets.UTF_8 ) );
-
-                if ( newMd5Sum.equals( oldMd5Sum ) )
+                // TODO get from file or db.
+                // DateTime age;
+                if ( newMd5Sum.equals( oldMd5Sum )
+                // && age.isAfter( new DateTime().minusHours( 36 ) )
+                )
                 {
                     // the file did not change from the last iteration, this was
                     // the last data set for today
@@ -288,7 +293,7 @@ public class CSVImporter
 
             // calculate date from both dates
             Date dateTime =
-                DatabaseProcessor.MYSQL_DATETIME_FORMAT.parseDateTime( dateString + " " + timeString ).toDate();
+                DatabaseProcessor.MYSQL_DATETIME_FORMAT.parseLocalDateTime( dateString + " " + timeString ).toDate();
 
             // process all columns for which we would like to find the maximum value
             // example: DaySum [3, 5, 7]
@@ -348,7 +353,7 @@ public class CSVImporter
 
             // calculate date from both dates
             Date dateTime =
-                DatabaseProcessor.MYSQL_DATETIME_FORMAT.parseDateTime( dateString + " " + timeString ).toDate();
+                DatabaseProcessor.MYSQL_DATETIME_FORMAT.parseLocalDateTime( dateString + " " + timeString ).toDate();
 
             // sumField == Pac || sumField == SolIrr || ...
             for ( Entry<String, List<Integer>> columnSameNamesEntry : sumColumns.entrySet() )

@@ -4,7 +4,7 @@
 	<groupId>net.rzaw.solar</groupId>
 	<artifactId>solarcsvimporter</artifactId>
 	<packaging>jar</packaging>
-	<version>1.2</version>
+	<version>1.2-SNAPSHOT</version>
 	<name>solarcsvimporter</name>
 
 	<properties>
