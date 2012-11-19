@@ -18,6 +18,8 @@ import org.jfree.data.xy.TableXYDataset;
 import org.jfree.data.xy.XYDataset;
 import org.jfree.util.Log;
 
+import com.google.common.base.Throwables;
+
 public class RzawJDBCXYDataset
     extends AbstractXYDataset
     implements XYDataset, TableXYDataset, RangeInfo
@@ -335,7 +337,7 @@ public class RzawJDBCXYDataset
                 }
                 catch ( Exception e )
                 {
-                    // TODO: is this a good idea?
+                    Throwables.propagate( e );
                 }
             }
             if ( statement != null )
@@ -346,7 +348,7 @@ public class RzawJDBCXYDataset
                 }
                 catch ( Exception e )
                 {
-                    // TODO: is this a good idea?
+                    Throwables.propagate( e );
                 }
             }
         }

@@ -53,7 +53,6 @@ public class RzawJDBCCategoryDataset
     public RzawJDBCCategoryDataset( String url, String driverName, String user, String passwd )
         throws ClassNotFoundException, SQLException
     {
-
         Class.forName( driverName );
         this.connection = DriverManager.getConnection( url, user, passwd );
     }

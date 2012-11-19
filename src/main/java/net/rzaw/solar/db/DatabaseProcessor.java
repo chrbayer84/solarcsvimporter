@@ -1,5 +1,8 @@
 package net.rzaw.solar.db;
 
+import static net.rzaw.solar.StringFormatter.formatString;
+
+import java.io.Closeable;
 import java.io.File;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -25,6 +28,7 @@ import org.joda.time.format.DateTimeFormatter;
 import com.google.common.base.Preconditions;
 
 public class DatabaseProcessor
+    implements Closeable
 {
     private static final Logger LOG = Logger.getLogger( CSVImporter.class );
 
@@ -33,6 +37,8 @@ public class DatabaseProcessor
     public static final String POWERS_CONSUMPTION_TABLE = "leistung_verbrauch";
 
     public static final String YIELD_TABLE = "ertrag";
+
+    public static final String FILES_TABLE = "dateien";
 
     public static final String CONSUMPTION_TABLE = "verbrauch";
 
@@ -81,20 +87,20 @@ public class DatabaseProcessor
         {
             Class.forName( "com.mysql.jdbc.Driver" );
             String connectionString =
-                StringFormatter.formatString( "jdbc:mysql://{}:{}/{}?user={}&password={}", server, port, database,
-                    userName, password ).toString();
-            LOG.debug( StringFormatter.formatString( "Use connection string: {}", connectionString ) );
+                formatString( "jdbc:mysql://{}:{}/{}?user={}&password={}", server, port, database, userName, password )
+                    .toString();
+            LOG.debug( formatString( "Use connection string: {}", connectionString ) );
             connection = DriverManager.getConnection( connectionString );
             connection.setAutoCommit( autoCommit );
         }
         catch ( ClassNotFoundException e )
         {
-            shutdown();
+            close();
             throw new SQLException( e );
         }
         catch ( SQLException e )
         {
-            shutdown();
+            close();
             throw new SQLException( e );
         }
     }
@@ -110,7 +116,8 @@ public class DatabaseProcessor
         return connection;
     }
 
-    public void shutdown()
+    @Override
+    public void close()
     {
         if ( connection != null )
         {
@@ -128,8 +135,8 @@ public class DatabaseProcessor
     public int getInstallationId( String installation )
         throws SQLException
     {
-        String sqlQuery =
-            StringFormatter.formatString( "select id from {} where verzeichnis = ?", INSTALLATIONS_TABLE ).toString();
+
+        String sqlQuery = formatString( "select id from {} where verzeichnis = ?", INSTALLATIONS_TABLE ).toString();
 
         ResultSet rs = null;
         int id = -1;
@@ -154,8 +161,8 @@ public class DatabaseProcessor
             {
                 statement.close();
             }
-            Preconditions.checkState( id != -1, StringFormatter.formatString(
-                "The id for supplied directory {} could not be found in the database.", installation ) );
+            Preconditions.checkState( id != -1,
+                formatString( "The id for supplied directory {} could not be found in the database.", installation ) );
         }
         return id;
     }
@@ -164,12 +171,14 @@ public class DatabaseProcessor
     public void updateDaySumColumns( String installationDir, String tableName, Map<String, SumEntry> daySums )
         throws SQLException
     {
+        LOG.info( formatString( "Writing to DB table {} day sum, installationEntry: {}", tableName, installationDir ) );
+
         String placeholder = "(?, ?, ?, ?)";
         String insertQueryStub =
-            StringFormatter.formatString( "insert into {} (anlage, datum, typ, daysum) values ", tableName ).toString();
+            formatString( "insert into {} (anlage, datum, typ, daysum) values ", tableName ).toString();
         StringBuilder builder = new StringBuilder( insertQueryStub );
 
-        LOG.info( StringFormatter.formatString( "Statement for {}: {}", installationDir, builder.toString() ) );
+        LOG.info( formatString( "Statement for {}: {}", installationDir, builder.toString() ) );
         // don't proceed if the map is empty
         if ( daySums.isEmpty() )
         {
@@ -211,7 +220,7 @@ public class DatabaseProcessor
                 statement.setDouble( ++i, sumColumnsEntry.getValue().getDaySum() );
             }
             int count = statement.executeUpdate();
-            LOG.info( StringFormatter.formatString( "Rows affected: {}", count ) );
+            LOG.info( formatString( "Rows affected: {}", count ) );
         }
         finally
         {
@@ -226,12 +235,14 @@ public class DatabaseProcessor
     public void updateSumSameColumns( String installationDir, String tableName, Map<String, List<SumEntry>> sumsColumns )
         throws SQLException
     {
+        LOG.info( formatString( "Writing to DB table {} sum for same columns, installationEntry: {}", tableName,
+            installationDir ) );
+
         String placeholder = "(?, ?, ?, ?)";
         String insertQueryStub =
-            StringFormatter.formatString( "insert into {} (anlage, datum, typ, leistung) values ", tableName )
-                .toString();
+            formatString( "insert into {} (anlage, datum, typ, leistung) values ", tableName ).toString();
         StringBuilder builder = new StringBuilder( insertQueryStub );
-        LOG.info( StringFormatter.formatString( "Statement for {}: {}", installationDir, builder.toString() ) );
+        LOG.info( formatString( "Statement for {}: {}", installationDir, builder.toString() ) );
 
         // don't proceed if the map is empty
         if ( sumsColumns.isEmpty() )
@@ -279,7 +290,7 @@ public class DatabaseProcessor
                 }
             }
             int count = statement.executeUpdate();
-            LOG.info( StringFormatter.formatString( "Rows affected: {}", count ) );
+            LOG.info( formatString( "Rows affected: {}", count ) );
         }
         finally
         {
@@ -293,6 +304,8 @@ public class DatabaseProcessor
     public void updateMd5Sum( File csvFile, String newMd5Sum )
         throws SQLException
     {
+        LOG.info( formatString( "Writing to DB MD5 sum for {}, installationEntry:  {}", csvFile, newMd5Sum ) );
+
         String insertQuery = "insert into dateien (dateiname, md5sum, fertig) values (?, ?, ?)";
         String updateQuery = "update dateien set md5sum = ? where dateiname = ?";
 
@@ -331,7 +344,9 @@ public class DatabaseProcessor
     public void markAsDone( File csvFile )
         throws SQLException
     {
-        String query = "update dateien set fertig = ? where dateiname = ?";
+        LOG.info( formatString( "Writing to DB table {}, csvFile: {}", FILES_TABLE, csvFile ) );
+
+        String query = formatString( "update {} set fertig = ? where dateiname = ?", FILES_TABLE ).toString();
         PreparedStatement stat = null;
         try
         {
@@ -357,7 +372,7 @@ public class DatabaseProcessor
     public boolean isDone( File csvFile )
         throws SQLException
     {
-        String selectQuery = "select fertig from dateien where dateiname = ?";
+        String selectQuery = formatString( "select fertig from {} where dateiname = ?", FILES_TABLE ).toString();
 
         ResultSet rs = null;
         boolean isDone = false;
@@ -398,7 +413,8 @@ public class DatabaseProcessor
     public String getMd5Sum( File csvFile )
         throws SQLException
     {
-        String sqlQuery = "select md5sum from dateien where dateiname = ?";
+
+        String sqlQuery = formatString( "select md5sum from {} where dateiname = ?", FILES_TABLE ).toString();
 
         ResultSet rs = null;
         String md5Sum = null;
@@ -431,8 +447,7 @@ public class DatabaseProcessor
         throws SQLException
     {
         String sqlQuery =
-            StringFormatter.formatString(
-                "select id, verzeichnis, verbrauch_daysum_cols, verbrauch_sum_cols from {} where aktiv = 1",
+            formatString( "select id, verzeichnis, verbrauch_daysum_cols, verbrauch_sum_cols from {} where aktiv = 1",
                 INSTALLATIONS_TABLE ).toString();
 
         ArrayList<InstallationEntry> installations = new ArrayList<InstallationEntry>();
@@ -465,12 +480,13 @@ public class DatabaseProcessor
     // ==========================================================================
     private static final String YIELD_CLAUSE = "select {}(datum), sum(daysum) from ";
 
-    private static final String POWERS_CLAUSE = "select datum, leistung from ";
+    private static final String POWERS_CLAUSE = "select datum, leistung * 0.001 from ";
 
     private static final String CONSUMPTION_CLAUSE = "select MONTH(datum), sum(daysum) ";
 
-    // private static final String DATE_CLAUSE = "where datum > (SELECT TIMESTAMP(DATE_SUB(NOW(), INTERVAL {} day)))";
-    private static final String DATE_CLAUSE = "where datum > (SELECT TIMESTAMP(DATE_SUB(NOW(), INTERVAL 1000 day)))";
+    private static final String DATE_CLAUSE = "where datum > (SELECT TIMESTAMP(DATE_SUB(NOW(), INTERVAL {} day)))";
+
+    // private static final String DATE_CLAUSE = "where datum > (SELECT TIMESTAMP(DATE_SUB(NOW(), INTERVAL 1000 day)))";
 
     private static final String WHERE_YEAR_CLAUSE = "where YEAR(datum) > YEAR(NOW())-2 group by MONTH(datum)";
 
@@ -487,34 +503,33 @@ public class DatabaseProcessor
 
     private String getYearClause( String clause )
     {
-        return StringFormatter.formatString( clause, "MONTH" ).toString();
+        return formatString( clause, "MONTH" ).toString();
     }
 
     private String getMonthClause( String clause )
     {
-        return StringFormatter.formatString( clause, "DATE" ).toString();
+        return formatString( clause, "DATE" ).toString();
     }
 
     private String getWeekClause( String clause )
     {
-        return StringFormatter.formatString( clause, "DAYNAME" ).toString();
+        return formatString( clause, "DAYNAME" ).toString();
     }
 
     private String getDateClause( int day )
     {
-        return StringFormatter.formatString( DATE_CLAUSE, day ).toString();
+        return formatString( DATE_CLAUSE, day ).toString();
     }
 
     public String getYieldQueryDay( int days )
     {
-        return StringFormatter.formatString( " {} {} {}", getYearClause( YIELD_CLAUSE ), YIELD_TABLE,
-            getDateClause( days ) ).toString();
+        return formatString( " {} {} {}", getYearClause( YIELD_CLAUSE ), YIELD_TABLE, getDateClause( days ) )
+            .toString();
     }
 
     public String getPowerQueryDay( int days )
     {
-        return StringFormatter.formatString( "{} {} {}", POWERS_CLAUSE, POWERS_TABLE, getDateClause( days ) )
-            .toString();
+        return formatString( "{} {} {}", POWERS_CLAUSE, POWERS_TABLE, getDateClause( days ) ).toString();
     }
 
     public String getPowersConsumptionQueryDay( int days )
@@ -525,15 +540,25 @@ public class DatabaseProcessor
 
     public String getConsumptionQueryDay( int days )
     {
-        return StringFormatter.formatString( "{} {} {}", CONSUMPTION_CLAUSE, CONSUMPTION_TABLE, getDateClause( days ) )
-            .toString();
+        return formatString( "{} {} {}", CONSUMPTION_CLAUSE, CONSUMPTION_TABLE, getDateClause( days ) ).toString();
     }
 
     // ==========================================================================
 
+    public String getYieldQueryYear( int anlageId, DateTime date )
+    {
+        return formatString( "SELECT DATE_FORMAT(datum,'%M') as tag, daysum * 0.001 " +
+        // ", DATE_FORMAT(datum,'%W') as tag " + //
+            "FROM `ertrag` " + //
+            "WHERE `anlage` = {} " + //
+            "AND `datum` BETWEEN DATE_SUB('{}', INTERVAL 365 DAY) AND '{}' AND `typ` = 'DaySum'",// +
+            anlageId, MYSQL_INTERNAL_DATETIME_FORMAT.print( date ), MYSQL_INTERNAL_DATETIME_FORMAT.print( date ) )
+            .toString();
+    }
+
     public String getYieldQueryWeek( int anlageId, DateTime date )
     {
-        return StringFormatter.formatString( "SELECT datum, daysum " +
+        return formatString( "SELECT DATE_FORMAT(datum,'%W') as tag, daysum * 0.001 " +
         // ", DATE_FORMAT(datum,'%W') as tag " + //
             "FROM `ertrag` " + //
             "WHERE `anlage` = {} " + //
@@ -544,7 +569,7 @@ public class DatabaseProcessor
 
     public String getYieldQueryMonth( int anlageId, DateTime date )
     {
-        return StringFormatter.formatString( "SELECT datum, daysum " +
+        return formatString( "SELECT DATE_FORMAT(datum,'%e') as tag, daysum * 0.001 " +
         // ", DATE_FORMAT(datum,'%e') as tag " + //
             "FROM `ertrag` " + //
             "WHERE `anlage` = {} " + //
@@ -555,8 +580,8 @@ public class DatabaseProcessor
 
     public String getPowerQueryDay( int anlageId, DateTime date )
     {
-        // return StringFormatter.formatString( "SELECT datum, leistung " +
-        return StringFormatter.formatString( "SELECT datum, leistung " +
+        // return formatString( "SELECT datum, leistung " +
+        return formatString( "SELECT DATE_FORMAT(datum,'%T' as tag, leistung * 0.001 " +
         // ", DATE_FORMAT(datum,'%T') as uhrzeit " + //
             "FROM `leistung` WHERE `anlage` = {} " + //
             "AND `datum` BETWEEN '{} 05:30:00' AND '{} 21:30:00' " + //

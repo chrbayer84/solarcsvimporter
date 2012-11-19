@@ -1,5 +1,6 @@
 package net.rzaw.solar.csvimport;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
@@ -7,6 +8,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -14,7 +16,7 @@ import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.regex.Pattern;
 
-import net.rzaw.solar.StringFormatter;
+import static net.rzaw.solar.StringFormatter.formatString;
 import net.rzaw.solar.db.DatabaseProcessor;
 
 import org.apache.commons.codec.digest.DigestUtils;
@@ -31,6 +33,7 @@ import com.google.common.collect.Maps;
 import com.google.common.io.Files;
 
 public class CSVImporter
+    implements Closeable
 {
     public static final String FIELD_DATE = "field.date";
 
@@ -91,6 +94,7 @@ public class CSVImporter
     public void processDirectory( InstallationEntry installationEntry )
         throws IOException, SQLException
     {
+        LOG.info( "Processing directory: " + installationEntry );
         // process all csv files in this directory
         for ( String csvFileName : installationEntry.getDirectory().list( csvFilter ) )
         {
@@ -113,7 +117,7 @@ public class CSVImporter
                     // the last data set for today
                     // mark this file as stable/done
                     databaseProcessor.markAsDone( csvFile );
-                    LOG.info( StringFormatter.formatString( "Marked file {} as done, not processing again.",
+                    LOG.info( formatString( "Marked file {} as done, not processing again.",
                         csvFileName ) );
                 }
                 else
@@ -165,7 +169,7 @@ public class CSVImporter
             }
             else
             {
-                LOG.info( StringFormatter.formatString( "file {} is already done, not processing again.", csvFileName ) );
+                LOG.info( formatString( "file {} is already done, not processing again.", csvFileName ) );
             }
         }
     }
@@ -173,6 +177,7 @@ public class CSVImporter
     private Map<String, SumEntry> calculateConsumptionDaySum( File csvFile, List<Integer> consumptionDaySumCols )
         throws SQLException
     {
+        LOG.debug( "Calculating consumption day sum." );
         // csv reader
         Csv csvReader = Csv.getInstance();
         csvReader.setFieldSeparatorRead( ';' );
@@ -187,6 +192,7 @@ public class CSVImporter
                                                                             List<Integer> consumptionSumCols )
         throws SQLException
     {
+        LOG.debug( "Calculating consumption sum same columns." );
         // csv reader
         Csv csvReader = Csv.getInstance();
         csvReader.setFieldSeparatorRead( ';' );
@@ -201,6 +207,7 @@ public class CSVImporter
     private Map<String, List<Integer>> processHeaders( ResultSetMetaData csvFileHeader, List<Integer> consumptionCols )
         throws SQLException
     {
+        LOG.info( "Processing headers. consumptionCols:" + consumptionCols );
         // process CSV header line (1st line)
         Map<String, List<Integer>> columns = Maps.newHashMap();
         for ( int consumptionCol : consumptionCols )
@@ -232,6 +239,8 @@ public class CSVImporter
                                                        List<Integer> consumptionCols )
         throws SQLException
     {
+        LOG.info( formatString( "Processing headers. consumptionCols: {}, fields: {}", consumptionCols,
+            Arrays.toString( fields ) ) );
         // process CSV header line (1st line)
         Map<String, List<Integer>> columns = Maps.newHashMap();
         for ( int i = 1; i < csvFileHeader.getColumnCount() + 1; i++ )
@@ -271,6 +280,8 @@ public class CSVImporter
                                                      List<Integer> consumptionDaySumCols )
         throws SQLException
     {
+        LOG.debug( "Calculating day sum." );
+
         // csv reader
         Csv csvReader = Csv.getInstance();
         csvReader.setFieldSeparatorRead( ';' );
@@ -284,6 +295,7 @@ public class CSVImporter
     private Map<String, SumEntry> calcSumFirstLine( ResultSet csvData, Map<String, List<Integer>> daySumColumns )
         throws SQLException
     {
+        LOG.debug( "Calculating first line." );
         Map<String, SumEntry> daySums = Maps.newHashMap();
         // just process the first line
         if ( csvData.next() )
@@ -329,6 +341,8 @@ public class CSVImporter
                                                                    List<Integer> consumptionSumCols )
         throws SQLException
     {
+        LOG.debug( "Calculating day sum same columns." );
+
         // csv reader
         Csv csvReader = Csv.getInstance();
         csvReader.setFieldSeparatorRead( ';' );
@@ -343,6 +357,7 @@ public class CSVImporter
     private Map<String, List<SumEntry>> calcSumOverall( ResultSet csvData, Map<String, List<Integer>> sumColumns )
         throws SQLException
     {
+        LOG.debug( "Calculating overall sum." );
         Map<String, List<SumEntry>> datesSumSameColumn = Maps.newHashMap();
 
         // process all lines
@@ -383,9 +398,10 @@ public class CSVImporter
         return datesSumSameColumn;
     }
 
-    public void shutdown()
+    @Override
+    public void close()
     {
-        databaseProcessor.shutdown();
+        databaseProcessor.close();
     }
 
     public ArrayList<InstallationEntry> getInstallationEntries()
