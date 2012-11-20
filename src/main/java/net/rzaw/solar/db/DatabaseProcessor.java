@@ -15,7 +15,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
 
-import net.rzaw.solar.StringFormatter;
 import net.rzaw.solar.csvimport.CSVImporter;
 import net.rzaw.solar.csvimport.InstallationEntry;
 import net.rzaw.solar.csvimport.SumEntry;
@@ -478,115 +477,51 @@ public class DatabaseProcessor
     }
 
     // ==========================================================================
-    private static final String YIELD_CLAUSE = "select {}(datum), sum(daysum) from ";
 
-    private static final String POWERS_CLAUSE = "select datum, leistung * 0.001 from ";
-
-    private static final String CONSUMPTION_CLAUSE = "select MONTH(datum), sum(daysum) ";
-
-    private static final String DATE_CLAUSE = "where datum > (SELECT TIMESTAMP(DATE_SUB(NOW(), INTERVAL {} day)))";
-
-    // private static final String DATE_CLAUSE = "where datum > (SELECT TIMESTAMP(DATE_SUB(NOW(), INTERVAL 1000 day)))";
-
-    private static final String WHERE_YEAR_CLAUSE = "where YEAR(datum) > YEAR(NOW())-2 group by MONTH(datum)";
-
-    private static final String WHERE_TYPE_CLAUSE = "and type = '{}'";
-
-    private static final String MONTH_SUM_CLAUSE = "select sum(daysum) from ";
-
-    // select MONTH(datum), sum(leistung) from leistung where YEAR(datum) > YEAR(NOW())-1 group by MONTH(datum);
-
-    // select sum(daysum) from ertrag where datum > (SELECT TIMESTAMP('2011-04-26')) and datum < (SELECT
-    // TIMESTAMP('2011-05-26'));
-    private static final String MONTH_DATE_CLAUSE =
-        "where datum > (SELECT TIMESTAMP(DATE_SUB(NOW(), INTERVAL {} day))) ";
-
-    private String getYearClause( String clause )
+    public String getPowerQueryDay( int installionId, DateTime date )
     {
-        return formatString( clause, "MONTH" ).toString();
+        return formatString(
+            "SELECT datum, leistung * 0.001 " + //
+                "FROM {} " + //
+                "WHERE anlage = {} " + //
+                "and leistung > 0 " + //
+                "AND datum BETWEEN '{} 05:30:00' AND '{} 21:30:00'" + //
+                "AND typ = 'PAC' " + //
+                "order by datum",//
+            POWERS_TABLE, installionId, MYSQL_INTERNAL_DATE_FORMAT.print( date ),
+            MYSQL_INTERNAL_DATE_FORMAT.print( date ) ).toString();
     }
 
-    private String getMonthClause( String clause )
+    public String getYieldQueryYear( int installionId, DateTime date )
     {
-        return formatString( clause, "DATE" ).toString();
-    }
-
-    private String getWeekClause( String clause )
-    {
-        return formatString( clause, "DAYNAME" ).toString();
-    }
-
-    private String getDateClause( int day )
-    {
-        return formatString( DATE_CLAUSE, day ).toString();
-    }
-
-    public String getYieldQueryDay( int days )
-    {
-        return formatString( " {} {} {}", getYearClause( YIELD_CLAUSE ), YIELD_TABLE, getDateClause( days ) )
-            .toString();
-    }
-
-    public String getPowerQueryDay( int days )
-    {
-        return formatString( "{} {} {}", POWERS_CLAUSE, POWERS_TABLE, getDateClause( days ) ).toString();
-    }
-
-    public String getPowersConsumptionQueryDay( int days )
-    {
-        return StringFormatter
-            .formatString( "{} {} {}", POWERS_CLAUSE, POWERS_CONSUMPTION_TABLE, getDateClause( days ) ).toString();
-    }
-
-    public String getConsumptionQueryDay( int days )
-    {
-        return formatString( "{} {} {}", CONSUMPTION_CLAUSE, CONSUMPTION_TABLE, getDateClause( days ) ).toString();
-    }
-
-    // ==========================================================================
-
-    public String getYieldQueryYear( int anlageId, DateTime date )
-    {
-        return formatString( "SELECT DATE_FORMAT(datum,'%M') as tag, daysum * 0.001 " +
-        // ", DATE_FORMAT(datum,'%W') as tag " + //
-            "FROM `ertrag` " + //
-            "WHERE `anlage` = {} " + //
-            "AND `datum` BETWEEN DATE_SUB('{}', INTERVAL 365 DAY) AND '{}' AND `typ` = 'DaySum'",// +
-            anlageId, MYSQL_INTERNAL_DATETIME_FORMAT.print( date ), MYSQL_INTERNAL_DATETIME_FORMAT.print( date ) )
-            .toString();
+        return formatString(
+            "SELECT DATE_FORMAT(datum,'%M') as tag, daysum * 0.001 " + //
+                "FROM {} " + //
+                "WHERE anlage = {} " + //
+                "AND datum BETWEEN DATE_SUB('{}', INTERVAL 365 DAY) AND '{}' AND typ = 'DaySum'",// +
+            YIELD_TABLE, installionId, MYSQL_INTERNAL_DATETIME_FORMAT.print( date ),
+            MYSQL_INTERNAL_DATETIME_FORMAT.print( date ) ).toString();
     }
 
     public String getYieldQueryWeek( int anlageId, DateTime date )
     {
-        return formatString( "SELECT DATE_FORMAT(datum,'%W') as tag, daysum * 0.001 " +
-        // ", DATE_FORMAT(datum,'%W') as tag " + //
-            "FROM `ertrag` " + //
-            "WHERE `anlage` = {} " + //
-            "AND `datum` BETWEEN DATE_SUB('{}', INTERVAL 7 DAY) AND '{}' AND `typ` = 'DaySum'",// +
-            anlageId, MYSQL_INTERNAL_DATETIME_FORMAT.print( date ), MYSQL_INTERNAL_DATETIME_FORMAT.print( date ) )
-            .toString();
+        return formatString(
+            "SELECT DATE_FORMAT(datum,'%W') as tag, daysum * 0.001 " + //
+                "FROM {} " + //
+                "WHERE anlage = {} " + //
+                "AND datum BETWEEN DATE_SUB('{}', INTERVAL 7 DAY) AND '{}' AND typ = 'DaySum'",// +
+            YIELD_TABLE, anlageId, MYSQL_INTERNAL_DATETIME_FORMAT.print( date ),
+            MYSQL_INTERNAL_DATETIME_FORMAT.print( date ) ).toString();
     }
 
-    public String getYieldQueryMonth( int anlageId, DateTime date )
+    public String getYieldQueryMonth( int installationId, DateTime date )
     {
-        return formatString( "SELECT DATE_FORMAT(datum,'%e') as tag, daysum * 0.001 " +
-        // ", DATE_FORMAT(datum,'%e') as tag " + //
-            "FROM `ertrag` " + //
-            "WHERE `anlage` = {} " + //
-            "AND `datum` BETWEEN DATE_SUB('{}', INTERVAL 31 DAY) AND '{}' AND `typ` = 'DaySum'",//
-            anlageId, MYSQL_INTERNAL_DATETIME_FORMAT.print( date ), MYSQL_INTERNAL_DATETIME_FORMAT.print( date ) )
-            .toString();
-    }
-
-    public String getPowerQueryDay( int anlageId, DateTime date )
-    {
-        // return formatString( "SELECT datum, leistung " +
-        return formatString( "SELECT DATE_FORMAT(datum,'%T' as tag, leistung * 0.001 " +
-        // ", DATE_FORMAT(datum,'%T') as uhrzeit " + //
-            "FROM `leistung` WHERE `anlage` = {} " + //
-            "AND `datum` BETWEEN '{} 05:30:00' AND '{} 21:30:00' " + //
-            "AND `typ` = 'PAC' " + //
-            "ORDER BY `leistung`.`datum` ASC",//
-            anlageId, MYSQL_INTERNAL_DATE_FORMAT.print( date ), MYSQL_INTERNAL_DATE_FORMAT.print( date ) ).toString();
+        return formatString(
+            "SELECT DATE_FORMAT(datum,'%e') as tag, daysum * 0.001 " + //
+                "FROM {} " + //
+                "WHERE anlage = {} " + //
+                "AND datum BETWEEN DATE_SUB('{}', INTERVAL 31 DAY) AND '{}' AND typ = 'DaySum'",//
+            YIELD_TABLE, installationId, MYSQL_INTERNAL_DATETIME_FORMAT.print( date ),
+            MYSQL_INTERNAL_DATETIME_FORMAT.print( date ) ).toString();
     }
 }

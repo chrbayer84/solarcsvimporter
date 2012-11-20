@@ -3,7 +3,6 @@ package net.rzaw.solar.charts;
 import static net.rzaw.solar.StringFormatter.formatString;
 
 import java.awt.Color;
-import java.awt.GradientPaint;
 import java.awt.image.BufferedImage;
 import java.io.Closeable;
 import java.io.File;
@@ -20,6 +19,8 @@ import net.rzaw.solar.db.DatabaseProcessor;
 import org.apache.log4j.Logger;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.JFreeChart;
+import org.jfree.chart.axis.CategoryAxis;
+import org.jfree.chart.axis.CategoryLabelPositions;
 import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.plot.CategoryPlot;
@@ -65,24 +66,22 @@ public class ChartProducer
         return subdir;
     }
 
-    public void render( DateTime dateTime )
+    public void render( InstallationEntry installationEntry, DateTime dateTime )
         throws SQLException, IOException
     {
-        // iterate over active installations
-        for ( InstallationEntry installationEntry : databaseProcessor.getInstallationEntries() )
-        {
-            createBarChartTimeDataset( databaseProcessor.getPowerQueryDay( 1 ), "Leistung", "Tag",
-                getChartsSubdirectory( installationEntry.getDirectory() ), dateTime );
+        LOG.info( formatString( "Creating charts in directory {}", installationEntry.getDirectory() ) );
 
-            createCategoryDataset( databaseProcessor.getYieldQueryMonth( installationEntry.getId(), dateTime ),
-                "Ertrag", "Monat", getChartsSubdirectory( installationEntry.getDirectory() ), dateTime );
+        createBarChartTimeDataset( databaseProcessor.getPowerQueryDay( installationEntry.getId(), dateTime ),
+            "Leistung", "Tag", getChartsSubdirectory( installationEntry.getDirectory() ), dateTime );
 
-            createCategoryDataset( databaseProcessor.getYieldQueryWeek( installationEntry.getId(), dateTime ),
-                "Ertrag", "Woche", getChartsSubdirectory( installationEntry.getDirectory() ), dateTime );
+        createCategoryDataset( databaseProcessor.getYieldQueryMonth( installationEntry.getId(), dateTime ), "Ertrag",
+            "Monat", getChartsSubdirectory( installationEntry.getDirectory() ), dateTime );
 
-            createCategoryDataset( databaseProcessor.getYieldQueryYear( installationEntry.getId(), dateTime ),
-                "Ertrag", "Jahr", getChartsSubdirectory( installationEntry.getDirectory() ), dateTime );
-        }
+        createCategoryDataset( databaseProcessor.getYieldQueryWeek( installationEntry.getId(), dateTime ), "Ertrag",
+            "Woche", getChartsSubdirectory( installationEntry.getDirectory() ), dateTime );
+
+        createCategoryDataset( databaseProcessor.getYieldQueryYear( installationEntry.getId(), dateTime ), "Ertrag",
+            "Jahr", getChartsSubdirectory( installationEntry.getDirectory() ), dateTime );
     }
 
     private void createCategoryDataset( String query, String name, String timeFrame, File parentDir, DateTime dateTime )
@@ -93,8 +92,7 @@ public class ChartProducer
         dataset.executeQuery( query );
         // create the chart...
         JFreeChart chart =
-            ChartFactory.createBarChart( name, "", "Leistung in kWh", dataset, PlotOrientation.VERTICAL, false, false,
-                false );
+            ChartFactory.createBarChart( "", "", "kWh", dataset, PlotOrientation.VERTICAL, false, false, false );
 
         // set the background color for the chart
         chart.setBackgroundPaint( BACKGROUND_COLOR );
@@ -103,19 +101,22 @@ public class ChartProducer
         CategoryPlot plot = (CategoryPlot) chart.getPlot();
         plot.setBackgroundPaint( PLOT_BACKGROUND_COLOR );
 
-        // set the range axis to display integers only
-        NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
-        rangeAxis.setStandardTickUnits( NumberAxis.createIntegerTickUnits() );
+        // rotate labels for jahr, otherwise won't fit
+        if ( timeFrame.equals( "Jahr" ) )
+        {
+            NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
+            rangeAxis.setStandardTickUnits( NumberAxis.createIntegerTickUnits() );
+            CategoryAxis xAxis = plot.getDomainAxis();
+            xAxis.setCategoryLabelPositions( CategoryLabelPositions.UP_45 );
+        }
 
         // disable bar outlines
         BarRenderer renderer = (BarRenderer) plot.getRenderer();
         renderer.setDrawBarOutline( false );
 
         renderer.setSeriesPaint( 0, SERIES_COLOR );
-        // renderer.setBasePaint( PLOT_BACKGROUND_COLOR );
         renderer.setBaseSeriesVisible( true );
         renderer.setSeriesFillPaint( 0, SERIES_COLOR );
-        // renderer.setBaseFillPaint( PLOT_BACKGROUND_COLOR );
 
         // retrieve image
         BufferedImage bi = chart.createBufferedImage( IMAGE_LENGTH, IMAGE_HEIGHT );
@@ -125,59 +126,8 @@ public class ChartProducer
 
     private String fileName( String name, String timeFrame, DateTime dateTime )
     {
-        return formatString( "{}_{}_{}.{}", name, timeFrame, DatabaseProcessor.MYSQL_DATE_FORMAT.print( dateTime ),
-            FILE_FORMAT ).toString();
-    }
-
-    @Deprecated
-    private void createBarChartDataset( String query, String name, File parentDir )
-        throws SQLException, IOException
-    {
-        RzawJDBCXYDataset dataset = new RzawJDBCXYDataset( databaseProcessor.getConnection() );
-        LOG.debug( "Chart query: " + query );
-        dataset.executeQuery( query );
-        XYBarDataset xyBarDataSet = new XYBarDataset( dataset, 1 );
-        // create the chart...
-        JFreeChart chart =
-            ChartFactory.createXYBarChart( name, "Monat", false, "Leistung", xyBarDataSet, PlotOrientation.VERTICAL,
-                false, false, false );
-
-        // set the background color for the chart...
-        // hsl(211, 92%, 36%)
-        // #075BB2
-        // rgb(7, 91, 178)
-        // Paint p = new GradientPaint( 0, 480, new Color( 7, 91, 178 ), 0, 0, Color.white );
-        chart.setBackgroundPaint( new Color( 255, 255, 255, 0 ) );
-        chart.setBackgroundImageAlpha( 0.0f );
-
-        // get a reference to the plot for fselect MONTH(datum), sum(daysum) from ertrag where datum > (SELECT
-        // TIMESTAMP(DATE_SUB(NOW(), INTERVAL 1000 day)))urther customisation...
-        XYPlot plot = (XYPlot) chart.getPlot();
-
-        // NumberAxis axis = (NumberAxis) plot.getDomainAxis();
-        // axis.setDateFormatOverride( new SimpleDateFormat( "MMM-yyyy" ) );
-
-        // set the range axis to display integers only...
-        NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
-        rangeAxis.setStandardTickUnits( NumberAxis.createIntegerTickUnits() );
-
-        // disable bar outlines...
-        XYBarRenderer renderer = (XYBarRenderer) plot.getRenderer();
-        // renderer.setDrawBarOutline( false );
-
-        // // set up gradient paints for series...
-        GradientPaint gp0 =
-            new GradientPaint( 0.0f, 0.0f, new Color( 188, 224, 46 ), 0.0f, 0.0f, new Color( 0, 0, 64 ) );
-        renderer.setSeriesPaint( 0, new Color( 188, 224, 46 ) );
-        // CategoryAxis domainAxis = plot.getDomainAxis();
-        // domainAxis.setCategoryLabelPositions( CategoryLabelPositions.createUpRotationLabelPositions( Math.PI / 6.0 )
-        // );
-        // OPTIONAL CUSTOMISATION COMPLETED.
-        // retrieve image
-        BufferedImage bi = chart.createBufferedImage( 670, 380 );
-
-        File outputFile = new File( parentDir, name + ".png" );
-        ImageIO.write( bi, FILE_FORMAT, outputFile );
+        return formatString( "{}_{}_{}.{}", name, timeFrame,
+            DatabaseProcessor.MYSQL_INTERNAL_DATE_FORMAT.print( dateTime ), FILE_FORMAT ).toString();
     }
 
     private void createBarChartTimeDataset( String query, String name, String timeFrame, File parentDir,
@@ -190,8 +140,8 @@ public class ChartProducer
         XYBarDataset xyBarDataSet = new XYBarDataset( dataset, 100 );
         // create the chart...
         JFreeChart chart =
-            ChartFactory.createXYBarChart( name, "", true, "Leistung in kWh", xyBarDataSet, PlotOrientation.VERTICAL,
-                false, false, false );
+            ChartFactory.createXYBarChart( "", "", true, "kW", xyBarDataSet, PlotOrientation.VERTICAL, false, false,
+                false );
 
         // set the background color for the chart
         chart.setBackgroundPaint( BACKGROUND_COLOR );

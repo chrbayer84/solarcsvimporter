@@ -4,9 +4,17 @@ import static net.rzaw.solar.StringFormatter.formatString;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import net.rzaw.solar.charts.ChartProducer;
 import net.rzaw.solar.csvimport.CSVImporter;
@@ -16,8 +24,10 @@ import org.apache.log4j.Logger;
 import org.joda.time.DateTime;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
 import com.google.common.io.Files;
 import com.google.common.io.InputSupplier;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 public class Runtime
 {
@@ -37,26 +47,61 @@ public class Runtime
                 Files.newInputStreamSupplier( new File( configFile ) );
             properties.load( configFileInputStreamSupplier.getInput() );
             // create new CSV importer instance
-            CSVImporter csvImporter = new CSVImporter( properties );
+            final CSVImporter csvImporter = new CSVImporter( properties );
+            final ChartProducer chartProducer = new ChartProducer( properties );
 
             // get all file paths from the database
             ArrayList<InstallationEntry> installationEntries = csvImporter.getInstallationEntries();
             LOG.info( formatString( "Starting up CSVImporter, processing the following directories: {}",
                 Arrays.toString( installationEntries.toArray() ) ).toString() );
-            for ( InstallationEntry installationEntry : installationEntries )
+            List<Callable<Boolean>> tasks = Lists.newArrayList();
+
+            for ( final InstallationEntry installationEntry : installationEntries )
             {
-                csvImporter.processDirectory( installationEntry );
+                tasks.add( new Callable<Boolean>()
+                {
+                    @Override
+                    public Boolean call()
+                    {
+                        try
+                        {
+                            csvImporter.processDirectory( installationEntry );
+                            // now render the chart images
+                            chartProducer.render( installationEntry, new DateTime() );
+                        }
+                        catch ( SQLException e )
+                        {
+                            LOG.error( "Failed processing directory " + installationEntry.getDirectory(), e );
+                            return false;
+                        }
+                        catch ( IOException e )
+                        {
+                            LOG.error( "Failed processing directory " + installationEntry.getDirectory(), e );
+                            return false;
+                        }
+                        return true;
+                    }
+                } );
             }
-            csvImporter.close();
-
+            ExecutorService importAndChartsExecutor =
+                Executors.newCachedThreadPool( new ThreadFactoryBuilder().setDaemon( true )
+                    .setNameFormat( "ImportAndChartsProducer #(%s)" ).build() );
+            List<Future<Boolean>> results = importAndChartsExecutor.invokeAll( tasks );
+            importAndChartsExecutor.shutdown();
+            // do not time out (at least in a reasonable time frame)
+            importAndChartsExecutor.awaitTermination( 7, TimeUnit.DAYS );
             LOG.info( "Finished processing directories." );
-            // now render the chart images
-            LOG.info( "Creating charts." );
-            ChartProducer chartProducer = new ChartProducer( properties );
-            chartProducer.render( new DateTime() );
-
+            csvImporter.close();
             chartProducer.close();
-            LOG.info( "Finished creating charts." );
+
+            for ( Future<Boolean> result : results )
+            {
+                if ( !result.get() )
+                {
+                    LOG.error( "" );
+                    System.exit( 1 );
+                }
+            }
         }
         catch ( Throwable e )
         {
