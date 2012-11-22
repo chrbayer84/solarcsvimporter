@@ -2,10 +2,10 @@ package net.rzaw.solar.db;
 
 import static net.rzaw.solar.StringFormatter.formatString;
 
+import java.beans.PropertyVetoException;
 import java.io.Closeable;
 import java.io.File;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -25,6 +25,7 @@ import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
 
 import com.google.common.base.Preconditions;
+import com.mchange.v2.c3p0.ComboPooledDataSource;
 
 public class DatabaseProcessor
     implements Closeable
@@ -61,7 +62,9 @@ public class DatabaseProcessor
 
     public static final String PORT = "mysql.port";
 
-    private final Connection connection;
+    private final ComboPooledDataSource pooledDatasource;
+
+    private final boolean autoCommit;
 
     public static final DateTimeFormatter MYSQL_DATETIME_FORMAT = DateTimeFormat.forPattern( "dd.MM.YY HH:mm:ss" );
 
@@ -84,20 +87,22 @@ public class DatabaseProcessor
 
         try
         {
-            Class.forName( "com.mysql.jdbc.Driver" );
-            String connectionString =
-                formatString( "jdbc:mysql://{}:{}/{}?user={}&password={}", server, port, database, userName, password )
-                    .toString();
+            pooledDatasource = new ComboPooledDataSource();
+            pooledDatasource.setDriverClass( "com.mysql.jdbc.Driver" ); // loads the jdbc driver
+            String connectionString = formatString( "jdbc:mysql://{}:{}/{}", server, port, database ).toString();
+
             LOG.debug( formatString( "Use connection string: {}", connectionString ) );
-            connection = DriverManager.getConnection( connectionString );
-            connection.setAutoCommit( autoCommit );
+            pooledDatasource.setJdbcUrl( connectionString );
+            pooledDatasource.setUser( userName );
+            pooledDatasource.setPassword( password );
+
+            // the settings below are optional -- c3p0 can work with defaults
+            pooledDatasource.setMinPoolSize( 10 );
+            pooledDatasource.setAcquireIncrement( 5 );
+            pooledDatasource.setMaxPoolSize( 50 );
+            this.autoCommit = autoCommit;
         }
-        catch ( ClassNotFoundException e )
-        {
-            close();
-            throw new SQLException( e );
-        }
-        catch ( SQLException e )
+        catch ( PropertyVetoException e )
         {
             close();
             throw new SQLException( e );
@@ -111,24 +116,17 @@ public class DatabaseProcessor
     }
 
     public Connection getConnection()
+        throws SQLException
     {
+        Connection connection = pooledDatasource.getConnection();
+        connection.setAutoCommit( autoCommit );
         return connection;
     }
 
     @Override
     public void close()
     {
-        if ( connection != null )
-        {
-            try
-            {
-                connection.close();
-            }
-            catch ( SQLException e )
-            {
-                LOG.error( "Error on closing: ", e );
-            }
-        }
+        pooledDatasource.close();
     }
 
     public int getInstallationId( String installation )
@@ -142,7 +140,7 @@ public class DatabaseProcessor
         PreparedStatement statement = null;
         try
         {
-            statement = connection.prepareStatement( sqlQuery );
+            statement = getConnection().prepareStatement( sqlQuery );
             statement.setString( 1, installation );
             rs = statement.executeQuery();
             if ( rs.next() )
@@ -207,7 +205,7 @@ public class DatabaseProcessor
         PreparedStatement statement = null;
         try
         {
-            statement = connection.prepareStatement( builder.toString() );
+            statement = getConnection().prepareStatement( builder.toString() );
             int i = 0;
 
             // iterate again over every entry in the map we have aka every date line with a sum
@@ -274,7 +272,7 @@ public class DatabaseProcessor
         PreparedStatement statement = null;
         try
         {
-            statement = connection.prepareStatement( builder.toString() );
+            statement = getConnection().prepareStatement( builder.toString() );
             int i = 0;
 
             // iterate again over every entry in the map we have aka every date line with a sum
@@ -317,7 +315,7 @@ public class DatabaseProcessor
             {
                 // there is no md5sum saved for this filename, due to null not being allowed for md5sum by the db, this
                 // will be an insert
-                statement = connection.prepareStatement( insertQuery );
+                statement = getConnection().prepareStatement( insertQuery );
                 statement.setString( 1, csvFile.toString() );
                 statement.setString( 2, newMd5Sum );
                 statement.setBoolean( 3, false );
@@ -325,7 +323,7 @@ public class DatabaseProcessor
             else
             {
                 // there already is a record with this filename, we got a valid md5sum, so statement will be an update
-                statement = connection.prepareStatement( updateQuery );
+                statement = getConnection().prepareStatement( updateQuery );
                 statement.setString( 1, newMd5Sum );
                 statement.setString( 2, csvFile.toString() );
             }
@@ -349,7 +347,7 @@ public class DatabaseProcessor
         PreparedStatement stat = null;
         try
         {
-            stat = connection.prepareStatement( query );
+            stat = getConnection().prepareStatement( query );
             stat.setBoolean( 1, true );
             stat.setString( 2, csvFile.toString() );
             stat.executeUpdate();
@@ -378,7 +376,7 @@ public class DatabaseProcessor
         PreparedStatement statement = null;
         try
         {
-            statement = connection.prepareStatement( selectQuery );
+            statement = getConnection().prepareStatement( selectQuery );
             statement.setString( 1, csvFile.toString() );
             rs = statement.executeQuery();
             // we have an entry in the db for this file, now lets look whether it is done or not
@@ -420,7 +418,7 @@ public class DatabaseProcessor
         PreparedStatement statement = null;
         try
         {
-            statement = connection.prepareStatement( sqlQuery );
+            statement = getConnection().prepareStatement( sqlQuery );
             statement.setString( 1, csvFile.toString() );
             rs = statement.executeQuery();
             if ( rs.next() )
@@ -454,7 +452,7 @@ public class DatabaseProcessor
         ResultSet rs = null;
         try
         {
-            statement = connection.prepareStatement( sqlQuery );
+            statement = getConnection().prepareStatement( sqlQuery );
             rs = statement.executeQuery();
             while ( rs.next() )
             {

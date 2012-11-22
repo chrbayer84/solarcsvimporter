@@ -31,6 +31,22 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 public class Runtime
 {
+    static class ImportChartResult
+    {
+        boolean success;
+
+        InstallationEntry installationEntry;
+
+        Throwable exception;
+
+        public ImportChartResult( boolean success, InstallationEntry installationEntry, Throwable exception )
+        {
+            this.success = success;
+            this.installationEntry = installationEntry;
+            this.exception = exception;
+        }
+    }
+
     private static final Logger LOG = Logger.getLogger( Runtime.class );
 
     public static void main( String[] args )
@@ -54,14 +70,14 @@ public class Runtime
             ArrayList<InstallationEntry> installationEntries = csvImporter.getInstallationEntries();
             LOG.info( formatString( "Starting up CSVImporter, processing the following directories: {}",
                 Arrays.toString( installationEntries.toArray() ) ).toString() );
-            List<Callable<Boolean>> tasks = Lists.newArrayList();
+            List<Callable<ImportChartResult>> tasks = Lists.newArrayList();
 
             for ( final InstallationEntry installationEntry : installationEntries )
             {
-                tasks.add( new Callable<Boolean>()
+                tasks.add( new Callable<ImportChartResult>()
                 {
                     @Override
-                    public Boolean call()
+                    public ImportChartResult call()
                     {
                         try
                         {
@@ -71,35 +87,34 @@ public class Runtime
                         }
                         catch ( SQLException e )
                         {
-                            LOG.error( "Failed processing directory " + installationEntry.getDirectory(), e );
-                            return false;
+                            return new ImportChartResult( false, installationEntry, e );
                         }
                         catch ( IOException e )
                         {
-                            LOG.error( "Failed processing directory " + installationEntry.getDirectory(), e );
-                            return false;
+                            return new ImportChartResult( false, installationEntry, e );
                         }
-                        return true;
+                        return new ImportChartResult( true, null, null );
                     }
                 } );
             }
             ExecutorService importAndChartsExecutor =
                 Executors.newCachedThreadPool( new ThreadFactoryBuilder().setDaemon( true )
                     .setNameFormat( "ImportAndChartsProducer #(%s)" ).build() );
-            List<Future<Boolean>> results = importAndChartsExecutor.invokeAll( tasks );
+            List<Future<ImportChartResult>> results = importAndChartsExecutor.invokeAll( tasks );
             importAndChartsExecutor.shutdown();
             // do not time out (at least in a reasonable time frame)
-            importAndChartsExecutor.awaitTermination( 7, TimeUnit.DAYS );
+            importAndChartsExecutor.awaitTermination( 1, TimeUnit.DAYS );
             LOG.info( "Finished processing directories." );
             csvImporter.close();
             chartProducer.close();
 
-            for ( Future<Boolean> result : results )
+            for ( Future<ImportChartResult> result : results )
             {
-                if ( !result.get() )
+                if ( !result.get().success )
                 {
-                    LOG.error( "" );
-                    System.exit( 1 );
+                    LOG.error( "Failed processing directory " + result.get().installationEntry.getDirectory(),
+                        result.get().exception );
+                    throw result.get().exception;
                 }
             }
         }
