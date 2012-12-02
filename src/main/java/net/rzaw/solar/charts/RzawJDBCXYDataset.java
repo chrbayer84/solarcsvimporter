@@ -1,7 +1,6 @@
 package net.rzaw.solar.charts;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -26,7 +25,7 @@ public class RzawJDBCXYDataset
 {
 
     /** The database connection. */
-    private transient Connection connection;
+    private final transient Connection connection;
 
     /** Column names. */
     private String[] columnNames = {};
@@ -44,33 +43,6 @@ public class RzawJDBCXYDataset
     private boolean isTimeSeries = false;
 
     /**
-     * Creates a new JDBCXYDataset (initially empty) with no database connection.
-     */
-    private RzawJDBCXYDataset()
-    {
-        this.rows = new ArrayList();
-    }
-
-    /**
-     * Creates a new dataset (initially empty) and establishes a new database connection.
-     * 
-     * @param url URL of the database connection.
-     * @param driverName the database driver class name.
-     * @param user the database user.
-     * @param password the database user's password.
-     * @throws ClassNotFoundException if the driver cannot be found.
-     * @throws SQLException if there is a problem connecting to the database.
-     */
-    public RzawJDBCXYDataset( String url, String driverName, String user, String password )
-        throws SQLException, ClassNotFoundException
-    {
-
-        this();
-        Class.forName( driverName );
-        this.connection = DriverManager.getConnection( url, user, password );
-    }
-
-    /**
      * Creates a new dataset (initially empty) using the specified database connection.
      * 
      * @param con the database connection.
@@ -79,7 +51,7 @@ public class RzawJDBCXYDataset
     public RzawJDBCXYDataset( Connection con )
         throws SQLException
     {
-        this();
+        this.rows = new ArrayList();
         this.connection = con;
     }
 

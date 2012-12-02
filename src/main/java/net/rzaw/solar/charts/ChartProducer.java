@@ -7,6 +7,7 @@ import java.awt.image.BufferedImage;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.sql.Connection;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
 import java.util.Properties;
@@ -15,6 +16,7 @@ import javax.imageio.ImageIO;
 
 import net.rzaw.solar.csvimport.InstallationEntry;
 import net.rzaw.solar.db.DatabaseProcessor;
+import net.rzaw.solar.db.Transaction;
 
 import org.apache.log4j.Logger;
 import org.jfree.chart.ChartFactory;
@@ -28,7 +30,6 @@ import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.category.BarRenderer;
 import org.jfree.chart.renderer.xy.XYBarRenderer;
-import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
 import org.jfree.data.xy.XYBarDataset;
 import org.joda.time.DateTime;
 
@@ -71,57 +72,67 @@ public class ChartProducer
     {
         LOG.info( formatString( "Creating charts in directory {}", installationEntry.getDirectory() ) );
 
-        createBarChartTimeDataset( databaseProcessor.getPowerQueryDay( installationEntry.getId(), dateTime ),
-            "Leistung", "Tag", getChartsSubdirectory( installationEntry.getDirectory() ), dateTime );
+        createBarChartTimeDataset( databaseProcessor.powerQueryDay( installationEntry.getId(), dateTime ), "Leistung",
+            "Tag", getChartsSubdirectory( installationEntry.getDirectory() ), dateTime );
 
-        createCategoryDataset( databaseProcessor.getYieldQueryMonth( installationEntry.getId(), dateTime ), "Ertrag",
+        createCategoryDataset( databaseProcessor.yieldQueryMonth( installationEntry.getId(), dateTime ), "Ertrag",
             "Monat", getChartsSubdirectory( installationEntry.getDirectory() ), dateTime );
 
-        createCategoryDataset( databaseProcessor.getYieldQueryWeek( installationEntry.getId(), dateTime ), "Ertrag",
+        createCategoryDataset( databaseProcessor.yieldQueryWeek( installationEntry.getId(), dateTime ), "Ertrag",
             "Woche", getChartsSubdirectory( installationEntry.getDirectory() ), dateTime );
 
-        createCategoryDataset( databaseProcessor.getYieldQueryYear( installationEntry.getId(), dateTime ), "Ertrag",
+        createCategoryDataset( databaseProcessor.yieldQueryYear( installationEntry.getId(), dateTime ), "Ertrag",
             "Jahr", getChartsSubdirectory( installationEntry.getDirectory() ), dateTime );
     }
 
-    private void createCategoryDataset( String query, String name, String timeFrame, File parentDir, DateTime dateTime )
+    private void createCategoryDataset( final String query, final String name, final String timeFrame,
+                                        final File parentDir, final DateTime dateTime )
         throws SQLException, IOException
     {
-        RzawJDBCCategoryDataset dataset = new RzawJDBCCategoryDataset( databaseProcessor.getConnection() );
-        LOG.debug( "Chart query: " + query );
-        dataset.executeQuery( query );
-        // create the chart...
-        JFreeChart chart =
-            ChartFactory.createBarChart( "", "", "kWh", dataset, PlotOrientation.VERTICAL, false, false, false );
-
-        // set the background color for the chart
-        chart.setBackgroundPaint( BACKGROUND_COLOR );
-
-        // get a reference to the plot for further customisation
-        CategoryPlot plot = (CategoryPlot) chart.getPlot();
-        plot.setBackgroundPaint( PLOT_BACKGROUND_COLOR );
-
-        // rotate labels for jahr, otherwise won't fit
-        if ( timeFrame.equals( "Jahr" ) )
+        new Transaction<Void>( databaseProcessor.getPooledDatasource(), true )
         {
-            NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
-            rangeAxis.setStandardTickUnits( NumberAxis.createIntegerTickUnits() );
-            CategoryAxis xAxis = plot.getDomainAxis();
-            xAxis.setCategoryLabelPositions( CategoryLabelPositions.UP_45 );
-        }
+            @Override
+            public Void action( Connection connection )
+                throws SQLException, IOException
+            {
+                RzawJDBCCategoryDataset dataset = new RzawJDBCCategoryDataset( connection );
+                LOG.debug( "Chart query: " + query );
+                dataset.executeQuery( query );
+                // create the chart...
+                JFreeChart chart =
+                    ChartFactory.createBarChart( "", "", "kWh", dataset, PlotOrientation.VERTICAL, false, false, false );
 
-        // disable bar outlines
-        BarRenderer renderer = (BarRenderer) plot.getRenderer();
-        renderer.setDrawBarOutline( false );
+                // set the background color for the chart
+                chart.setBackgroundPaint( BACKGROUND_COLOR );
 
-        renderer.setSeriesPaint( 0, SERIES_COLOR );
-        renderer.setBaseSeriesVisible( true );
-        renderer.setSeriesFillPaint( 0, SERIES_COLOR );
+                // get a reference to the plot for further customisation
+                CategoryPlot plot = (CategoryPlot) chart.getPlot();
+                plot.setBackgroundPaint( PLOT_BACKGROUND_COLOR );
 
-        // retrieve image
-        BufferedImage bi = chart.createBufferedImage( IMAGE_LENGTH, IMAGE_HEIGHT );
-        File outputFile = new File( parentDir, fileName( name, timeFrame, dateTime ) );
-        ImageIO.write( bi, FILE_FORMAT, outputFile );
+                // rotate labels for jahr, otherwise won't fit
+                if ( timeFrame.equals( "Jahr" ) )
+                {
+                    NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
+                    rangeAxis.setStandardTickUnits( NumberAxis.createIntegerTickUnits() );
+                    CategoryAxis xAxis = plot.getDomainAxis();
+                    xAxis.setCategoryLabelPositions( CategoryLabelPositions.UP_45 );
+                }
+
+                // disable bar outlines
+                BarRenderer renderer = (BarRenderer) plot.getRenderer();
+                renderer.setDrawBarOutline( false );
+
+                renderer.setSeriesPaint( 0, SERIES_COLOR );
+                renderer.setBaseSeriesVisible( true );
+                renderer.setSeriesFillPaint( 0, SERIES_COLOR );
+
+                // retrieve image
+                BufferedImage bi = chart.createBufferedImage( IMAGE_LENGTH, IMAGE_HEIGHT );
+                File outputFile = new File( parentDir, fileName( name, timeFrame, dateTime ) );
+                ImageIO.write( bi, FILE_FORMAT, outputFile );
+                return null;
+            }
+        }.call();
     }
 
     private String fileName( String name, String timeFrame, DateTime dateTime )
@@ -130,98 +141,58 @@ public class ChartProducer
             DatabaseProcessor.MYSQL_INTERNAL_DATE_FORMAT.print( dateTime ), FILE_FORMAT ).toString();
     }
 
-    private void createBarChartTimeDataset( String query, String name, String timeFrame, File parentDir,
-                                            DateTime dateTime )
+    private void createBarChartTimeDataset( final String query, final String name, final String timeFrame,
+                                            final File parentDir, final DateTime dateTime )
         throws SQLException, IOException
     {
-        RzawJDBCXYDataset dataset = new RzawJDBCXYDataset( databaseProcessor.getConnection() );
-        LOG.debug( "Chart query: " + query );
-        dataset.executeQuery( query );
-        XYBarDataset xyBarDataSet = new XYBarDataset( dataset, 100 );
-        // create the chart...
-        JFreeChart chart =
-            ChartFactory.createXYBarChart( "", "", true, "kW", xyBarDataSet, PlotOrientation.VERTICAL, false, false,
-                false );
+        new Transaction<Void>( databaseProcessor.getPooledDatasource(), true )
+        {
+            @Override
+            public Void action( Connection connection )
+                throws SQLException, IOException
+            {
+                RzawJDBCXYDataset dataset = new RzawJDBCXYDataset( connection );
+                LOG.debug( "Chart query: " + query );
+                dataset.executeQuery( query );
+                XYBarDataset xyBarDataSet = new XYBarDataset( dataset, 100 );
+                // create the chart...
+                JFreeChart chart =
+                    ChartFactory.createXYBarChart( "", "", true, "kW", xyBarDataSet, PlotOrientation.VERTICAL, false,
+                        false, false );
 
-        // set the background color for the chart
-        chart.setBackgroundPaint( BACKGROUND_COLOR );
+                // set the background color for the chart
+                chart.setBackgroundPaint( BACKGROUND_COLOR );
 
-        // get a reference to the plot for further customisation
-        XYPlot plot = (XYPlot) chart.getPlot();
-        plot.setBackgroundPaint( PLOT_BACKGROUND_COLOR );
+                // get a reference to the plot for further customisation
+                XYPlot plot = (XYPlot) chart.getPlot();
+                plot.setBackgroundPaint( PLOT_BACKGROUND_COLOR );
 
-        // set the range axis to display dates
-        DateAxis axis = (DateAxis) plot.getDomainAxis();
-        axis.setDateFormatOverride( new SimpleDateFormat( "HH:mm" ) );
+                // set the range axis to display dates
+                DateAxis axis = (DateAxis) plot.getDomainAxis();
+                axis.setDateFormatOverride( new SimpleDateFormat( "HH:mm" ) );
 
-        // set the range axis to display integers only...
-        // NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
-        // rangeAxis.setStandardTickUnits( NumberAxis.createIntegerTickUnits() );
+                // set the range axis to display integers only...
+                // NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
+                // rangeAxis.setStandardTickUnits( NumberAxis.createIntegerTickUnits() );
 
-        // disable bar outlines...
-        XYBarRenderer renderer = (XYBarRenderer) plot.getRenderer();
-        renderer.setDrawBarOutline( false );
+                // disable bar outlines...
+                XYBarRenderer renderer = (XYBarRenderer) plot.getRenderer();
+                renderer.setDrawBarOutline( false );
 
-        // // set up gradient paints for series...
-        renderer.setSeriesPaint( 0, SERIES_COLOR );
+                // // set up gradient paints for series...
+                renderer.setSeriesPaint( 0, SERIES_COLOR );
 
-        // retrieve image
-        BufferedImage bi = chart.createBufferedImage( IMAGE_LENGTH, IMAGE_HEIGHT );
-        File outputFile = new File( parentDir, fileName( name, timeFrame, dateTime ) );
-        ImageIO.write( bi, FILE_FORMAT, outputFile );
-    }
-
-    @Deprecated
-    private void createLineChart( String query, String name, File parentDir )
-        throws SQLException, IOException
-    {
-        RzawJDBCXYDataset dataset = new RzawJDBCXYDataset( databaseProcessor.getConnection() );
-        LOG.debug( "Chart query: " + query );
-        dataset.executeQuery( query );
-        // create the chart...
-        JFreeChart chart =
-            ChartFactory.createTimeSeriesChart( name, "Uhrzeit", "Leistung in kWh", dataset, false, false, false );
-
-        // set the background color for the chart...
-        // hsl(211, 92%, 36%)
-        // #075BB2
-        // rgb(7, 91, 178)
-        // Paint p = new GradientPaint( 0, 480, new Color( 7, 91, 178 ), 0, 0, Color.white );
-
-        chart.setBackgroundPaint( new Color( 255, 255, 255, 128 ) );
-        chart.setBackgroundImageAlpha( 0.5f );
-
-        XYPlot plot = (XYPlot) chart.getPlot();
-
-        DateAxis axis = (DateAxis) plot.getDomainAxis();
-        axis.setDateFormatOverride( new SimpleDateFormat( "HH:mm:ss" ) );
-
-        // set the range axis to display integers only...
-        NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
-        rangeAxis.setStandardTickUnits( NumberAxis.createIntegerTickUnits() );
-
-        // disable bar outlines...
-        XYLineAndShapeRenderer renderer = (XYLineAndShapeRenderer) plot.getRenderer();
-
-        // // set up gradient paints for series...
-        Color seriesColor = new Color( 188, 224, 46 );
-        // GradientPaint gp0 =
-        // new GradientPaint( 0.0f, 0.0f, new Color( 188, 224, 46 ), 0.0f, 0.0f, new Color( 0, 0, 64 ) );
-        renderer.setSeriesPaint( 0, seriesColor );
-        renderer.setBasePaint( PLOT_BACKGROUND_COLOR );
-        renderer.setBaseSeriesVisible( true );
-        renderer.setSeriesFillPaint( 0, seriesColor );
-
-        renderer.setBaseFillPaint( PLOT_BACKGROUND_COLOR );
-        // retrieve image
-        BufferedImage bi = chart.createBufferedImage( 670, 380 );
-
-        File outputFile = new File( parentDir, name + ".png" );
-        ImageIO.write( bi, FILE_FORMAT, outputFile );
+                // retrieve image
+                BufferedImage bi = chart.createBufferedImage( IMAGE_LENGTH, IMAGE_HEIGHT );
+                File outputFile = new File( parentDir, fileName( name, timeFrame, dateTime ) );
+                ImageIO.write( bi, FILE_FORMAT, outputFile );
+                return null;
+            }
+        }.call();
     }
 
     public ChartProducer( Properties properties )
-        throws SQLException
+        throws SQLException, IOException
     {
         databaseProcessor = new DatabaseProcessor( properties, false );
     }

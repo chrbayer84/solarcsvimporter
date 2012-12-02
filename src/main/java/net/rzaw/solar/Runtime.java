@@ -6,7 +6,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
@@ -31,22 +30,6 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 public class Runtime
 {
-    static class ImportChartResult
-    {
-        boolean success;
-
-        InstallationEntry installationEntry;
-
-        Throwable exception;
-
-        public ImportChartResult( boolean success, InstallationEntry installationEntry, Throwable exception )
-        {
-            this.success = success;
-            this.installationEntry = installationEntry;
-            this.exception = exception;
-        }
-    }
-
     private static final Logger LOG = Logger.getLogger( Runtime.class );
 
     public static void main( String[] args )
@@ -65,57 +48,64 @@ public class Runtime
             // create new CSV importer instance
             final CSVImporter csvImporter = new CSVImporter( properties );
             final ChartProducer chartProducer = new ChartProducer( properties );
-
-            // get all file paths from the database
-            ArrayList<InstallationEntry> installationEntries = csvImporter.getInstallationEntries();
-            LOG.info( formatString( "Starting up CSVImporter, processing the following directories: {}",
-                Arrays.toString( installationEntries.toArray() ) ).toString() );
-            List<Callable<ImportChartResult>> tasks = Lists.newArrayList();
-
-            for ( final InstallationEntry installationEntry : installationEntries )
+            final ExecutorService importAndChartsExecutor =
+                Executors.newFixedThreadPool( java.lang.Runtime.getRuntime().availableProcessors() * 2,
+                    new ThreadFactoryBuilder().setDaemon( true ).setNameFormat( "ImportAndChartsProducer #(%s)" )
+                        .build() );
+            try
             {
-                tasks.add( new Callable<ImportChartResult>()
+                // get all file paths from the database
+                List<InstallationEntry> installationEntries = csvImporter.getInstallationEntries();
+                LOG.info( formatString( "Starting up CSVImporter, processing the following directories: {}",
+                    Arrays.toString( installationEntries.toArray() ) ).toString() );
+                List<Callable<ImportChartResult>> tasks = Lists.newArrayList();
+
+                for ( final InstallationEntry installationEntry : installationEntries )
                 {
-                    @Override
-                    public ImportChartResult call()
+                    tasks.add( new Callable<ImportChartResult>()
                     {
-                        try
+                        @Override
+                        public ImportChartResult call()
                         {
-                            csvImporter.processDirectory( installationEntry );
-                            // now render the chart images
-                            chartProducer.render( installationEntry, new DateTime() );
+                            try
+                            {
+                                csvImporter.processDirectory( installationEntry );
+                                // now render the chart images
+                                chartProducer.render( installationEntry, new DateTime() );
+                            }
+                            catch ( SQLException e )
+                            {
+                                return new ImportChartResult( false, installationEntry, e );
+                            }
+                            catch ( IOException e )
+                            {
+                                return new ImportChartResult( false, installationEntry, e );
+                            }
+                            return new ImportChartResult( true, null, null );
                         }
-                        catch ( SQLException e )
-                        {
-                            return new ImportChartResult( false, installationEntry, e );
-                        }
-                        catch ( IOException e )
-                        {
-                            return new ImportChartResult( false, installationEntry, e );
-                        }
-                        return new ImportChartResult( true, null, null );
-                    }
-                } );
-            }
-            ExecutorService importAndChartsExecutor =
-                Executors.newCachedThreadPool( new ThreadFactoryBuilder().setDaemon( true )
-                    .setNameFormat( "ImportAndChartsProducer #(%s)" ).build() );
-            List<Future<ImportChartResult>> results = importAndChartsExecutor.invokeAll( tasks );
-            importAndChartsExecutor.shutdown();
-            // do not time out (at least in a reasonable time frame)
-            importAndChartsExecutor.awaitTermination( 1, TimeUnit.DAYS );
-            LOG.info( "Finished processing directories." );
-            csvImporter.close();
-            chartProducer.close();
-
-            for ( Future<ImportChartResult> result : results )
-            {
-                if ( !result.get().success )
-                {
-                    LOG.error( "Failed processing directory " + result.get().installationEntry.getDirectory(),
-                        result.get().exception );
-                    throw result.get().exception;
+                    } );
                 }
+                List<Future<ImportChartResult>> results = importAndChartsExecutor.invokeAll( tasks );
+                importAndChartsExecutor.shutdown();
+                importAndChartsExecutor.awaitTermination( 1, TimeUnit.DAYS );
+                LOG.info( "Finished processing directories." );
+
+                for ( Future<ImportChartResult> result : results )
+                {
+                    if ( !result.get().isSuccess() )
+                    {
+                        LOG.error( "Failed processing directory " + result.get().getInstallationEntry().getDirectory(),
+                            result.get().getException() );
+                        throw result.get().getException();
+                    }
+                }
+            }
+            finally
+            {
+                csvImporter.close();
+                chartProducer.close();
+                // all tasks have been completed
+                importAndChartsExecutor.shutdownNow();
             }
         }
         catch ( Throwable e )

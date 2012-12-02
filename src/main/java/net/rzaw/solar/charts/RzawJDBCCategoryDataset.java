@@ -2,7 +2,6 @@ package net.rzaw.solar.charts;
 
 import java.sql.Connection;
 import java.sql.Date;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -32,30 +31,13 @@ public class RzawJDBCCategoryDataset
     static final long serialVersionUID = -3080395327918844965L;
 
     /** The database connection. */
-    private transient Connection connection;
+    private final transient Connection connection;
 
     /**
      * A flag the controls whether or not the table is transposed. The default is 'true' because this provides the
      * behaviour described in the documentation.
      */
     private boolean transpose = true;
-
-    /**
-     * Creates a new dataset with a database connection.
-     * 
-     * @param url the URL of the database connection.
-     * @param driverName the database driver class name.
-     * @param user the database user.
-     * @param passwd the database user's password.
-     * @throws ClassNotFoundException if the driver cannot be found.
-     * @throws SQLException if there is an error obtaining a connection to the database.
-     */
-    public RzawJDBCCategoryDataset( String url, String driverName, String user, String passwd )
-        throws ClassNotFoundException, SQLException
-    {
-        Class.forName( driverName );
-        this.connection = DriverManager.getConnection( url, user, passwd );
-    }
 
     /**
      * Create a new dataset with the given database connection.

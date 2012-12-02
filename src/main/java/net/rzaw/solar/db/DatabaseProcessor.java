@@ -5,10 +5,14 @@ import static net.rzaw.solar.StringFormatter.formatString;
 import java.beans.PropertyVetoException;
 import java.io.Closeable;
 import java.io.File;
+import java.io.IOException;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -44,27 +48,15 @@ public class DatabaseProcessor
 
     public static final String INSTALLATIONS_TABLE = "anlage";
 
-    public static final String MYSQL_DATABASE = "mysql.database";
+    private static final String DATABASE = "mysql.database";
 
-    public static final String MYSQL_USER = "mysql.user";
+    private static final String USERNAME = "mysql.user";
 
-    public static final String MYSQL_PASSWORD = "mysql.password";
+    private static final String PASSWORD = "mysql.password";
 
-    public static final String MYSQL_SERVER = "mysql.server";
+    private static final String SERVER = "mysql.server";
 
-    public static final String DATABASE = "mysql.database";
-
-    public static final String USERNAME = "mysql.user";
-
-    public static final String PASSWORD = "mysql.password";
-
-    public static final String SERVER = "mysql.server";
-
-    public static final String PORT = "mysql.port";
-
-    private final ComboPooledDataSource pooledDatasource;
-
-    private final boolean autoCommit;
+    private static final String PORT = "mysql.port";
 
     public static final DateTimeFormatter MYSQL_DATETIME_FORMAT = DateTimeFormat.forPattern( "dd.MM.YY HH:mm:ss" );
 
@@ -75,8 +67,14 @@ public class DatabaseProcessor
     public static final DateTimeFormatter MYSQL_INTERNAL_DATETIME_FORMAT = DateTimeFormat
         .forPattern( "YYYY-MM-dd HH:mm:ss" );
 
+    private static final String FILES_DATE_COLUMN = "datum";
+
+    private final ComboPooledDataSource pooledDatasource;
+
+    private final boolean autoCommit;
+
     public DatabaseProcessor( Properties properties, boolean autoCommit )
-        throws SQLException
+        throws SQLException, IOException
     {
         // create database connection
         String userName = properties.getProperty( USERNAME );
@@ -84,6 +82,8 @@ public class DatabaseProcessor
         String database = properties.getProperty( DATABASE );
         String server = properties.getProperty( SERVER );
         String port = properties.getProperty( PORT );
+
+        this.autoCommit = autoCommit;
 
         try
         {
@@ -100,27 +100,80 @@ public class DatabaseProcessor
             pooledDatasource.setMinPoolSize( 10 );
             pooledDatasource.setAcquireIncrement( 5 );
             pooledDatasource.setMaxPoolSize( 50 );
-            this.autoCommit = autoCommit;
         }
         catch ( PropertyVetoException e )
         {
             close();
             throw new SQLException( e );
         }
+        // if date column does not exist, create it
+        if ( !isNewSchema() )
+        {
+            addDateColumnFiles();
+        }
+        Preconditions.checkState( isNewSchema(), "Could not create new date column to files table." );
+    }
+
+    private boolean isNewSchema()
+        throws SQLException, IOException
+    {
+        return new Transaction<Boolean>( pooledDatasource, autoCommit )
+        {
+            @Override
+            public Boolean action( Connection connection )
+                throws SQLException
+            {
+                DatabaseMetaData metaData = connection.getMetaData();
+                ResultSet rs = metaData.getColumns( null, null, FILES_TABLE, FILES_DATE_COLUMN );
+                return rs.next();
+            }
+        }.call();
+    }
+
+    public ComboPooledDataSource getPooledDatasource()
+    {
+        return pooledDatasource;
+    }
+
+    private void addDateColumnFiles()
+        throws SQLException, IOException
+    {
+        final String sqlAdd = formatString( "ALTER TABLE {} ADD COLUMN {} DATETIME",//
+            FILES_TABLE, FILES_DATE_COLUMN ).toString();
+
+        new Transaction<Boolean>( pooledDatasource, autoCommit )
+        {
+            @Override
+            public Boolean action( Connection connection )
+                throws SQLException
+            {
+                PreparedStatement statement = null;
+                try
+                {
+                    statement = connection.prepareStatement( sqlAdd );
+                    statement.execute();
+                }
+                catch ( SQLException e )
+                {
+                    // re-trow
+                    throw e;
+                }
+                finally
+                {
+                    if ( statement != null )
+                    {
+                        statement.close();
+                    }
+                }
+                return null;
+            }
+        }.call();
     }
 
     public DatabaseProcessor( Properties properties )
-        throws SQLException
+        throws SQLException, IOException
     {
         this( properties, true );
-    }
-
-    public Connection getConnection()
-        throws SQLException
-    {
-        Connection connection = pooledDatasource.getConnection();
-        connection.setAutoCommit( autoCommit );
-        return connection;
     }
 
     @Override
@@ -129,51 +182,61 @@ public class DatabaseProcessor
         pooledDatasource.close();
     }
 
-    public int getInstallationId( String installation )
-        throws SQLException
+    public int getInstallationId( final String installation )
+        throws SQLException, IOException
     {
-
-        String sqlQuery = formatString( "select id from {} where verzeichnis = ?", INSTALLATIONS_TABLE ).toString();
-
-        ResultSet rs = null;
-        int id = -1;
-        PreparedStatement statement = null;
-        try
+        final String sqlQuery =
+            formatString( "select id from {} where verzeichnis = ?", INSTALLATIONS_TABLE ).toString();
+        return new Transaction<Integer>( pooledDatasource, autoCommit )
         {
-            statement = getConnection().prepareStatement( sqlQuery );
-            statement.setString( 1, installation );
-            rs = statement.executeQuery();
-            if ( rs.next() )
+            @Override
+            public Integer action( Connection connection )
+                throws SQLException
             {
-                id = rs.getInt( 1 );
+                ResultSet rs = null;
+                int id = -1;
+                PreparedStatement statement = null;
+                try
+                {
+                    statement = connection.prepareStatement( sqlQuery );
+                    statement.setString( 1, installation );
+                    rs = statement.executeQuery();
+                    if ( rs.next() )
+                    {
+                        id = rs.getInt( 1 );
+                    }
+                }
+                finally
+                {
+                    if ( rs != null )
+                    {
+                        rs.close();
+                    }
+                    if ( statement != null )
+                    {
+                        statement.close();
+                    }
+                    Preconditions.checkState(
+                        id != -1,
+                        formatString( "The id for supplied directory {} could not be found in the database.",
+                            installation ) );
+                }
+                return id;
             }
-        }
-        finally
-        {
-            if ( rs != null )
-            {
-                rs.close();
-            }
-            if ( statement != null )
-            {
-                statement.close();
-            }
-            Preconditions.checkState( id != -1,
-                formatString( "The id for supplied directory {} could not be found in the database.", installation ) );
-        }
-        return id;
+        }.call();
     }
 
     @SuppressWarnings( "unused" )
-    public void updateDaySumColumns( String installationDir, String tableName, Map<String, SumEntry> daySums )
-        throws SQLException
+    public void updateDaySumColumns( final String installationDir, final String tableName,
+                                     final Map<String, SumEntry> daySums )
+        throws SQLException, IOException
     {
         LOG.info( formatString( "Writing to DB table {} day sum, installationEntry: {}", tableName, installationDir ) );
 
         String placeholder = "(?, ?, ?, ?)";
         String insertQueryStub =
             formatString( "insert into {} (anlage, datum, typ, daysum) values ", tableName ).toString();
-        StringBuilder builder = new StringBuilder( insertQueryStub );
+        final StringBuilder builder = new StringBuilder( insertQueryStub );
 
         LOG.info( formatString( "Statement for {}: {}", installationDir, builder.toString() ) );
         // don't proceed if the map is empty
@@ -200,37 +263,47 @@ public class DatabaseProcessor
         builder.deleteCharAt( builder.length() - 1 );
 
         // query id for installation in directory "installationDir"
-        int id = getInstallationId( installationDir );
+        final int id = getInstallationId( installationDir );
 
-        PreparedStatement statement = null;
-        try
+        new Transaction<Void>( pooledDatasource, autoCommit )
         {
-            statement = getConnection().prepareStatement( builder.toString() );
-            int i = 0;
+            @Override
+            public Void action( Connection connection )
+                throws SQLException
+            {
+                PreparedStatement statement = null;
+                try
+                {
+                    statement = connection.prepareStatement( builder.toString() );
+                    int i = 0;
 
-            // iterate again over every entry in the map we have aka every date line with a sum
-            for ( Entry<String, SumEntry> sumColumnsEntry : daySums.entrySet() )
-            {
-                statement.setInt( ++i, id );
-                statement.setTimestamp( ++i, new java.sql.Timestamp( sumColumnsEntry.getValue().getDate().getTime() ) );
-                statement.setString( ++i, sumColumnsEntry.getKey() );
-                statement.setDouble( ++i, sumColumnsEntry.getValue().getDaySum() );
+                    // iterate again over every entry in the map we have aka every date line with a sum
+                    for ( Entry<String, SumEntry> sumColumnsEntry : daySums.entrySet() )
+                    {
+                        statement.setInt( ++i, id );
+                        statement.setTimestamp( ++i, new Timestamp( sumColumnsEntry.getValue().getDate().getTime() ) );
+                        statement.setString( ++i, sumColumnsEntry.getKey() );
+                        statement.setDouble( ++i, sumColumnsEntry.getValue().getDaySum() );
+                    }
+                    int count = statement.executeUpdate();
+                    LOG.info( formatString( "Rows affected: {}", count ) );
+                }
+                finally
+                {
+                    if ( statement != null )
+                    {
+                        statement.close();
+                    }
+                }
+                return null;
             }
-            int count = statement.executeUpdate();
-            LOG.info( formatString( "Rows affected: {}", count ) );
-        }
-        finally
-        {
-            if ( statement != null )
-            {
-                statement.close();
-            }
-        }
+        }.call();
     }
 
     @SuppressWarnings( "unused" )
-    public void updateSumSameColumns( String installationDir, String tableName, Map<String, List<SumEntry>> sumsColumns )
-        throws SQLException
+    public void updateSumSameColumns( final String installationDir, final String tableName,
+                                      final Map<String, List<SumEntry>> sumsColumns )
+        throws SQLException, IOException
     {
         LOG.info( formatString( "Writing to DB table {} sum for same columns, installationEntry: {}", tableName,
             installationDir ) );
@@ -238,7 +311,7 @@ public class DatabaseProcessor
         String placeholder = "(?, ?, ?, ?)";
         String insertQueryStub =
             formatString( "insert into {} (anlage, datum, typ, leistung) values ", tableName ).toString();
-        StringBuilder builder = new StringBuilder( insertQueryStub );
+        final StringBuilder builder = new StringBuilder( insertQueryStub );
         LOG.info( formatString( "Statement for {}: {}", installationDir, builder.toString() ) );
 
         // don't proceed if the map is empty
@@ -267,95 +340,167 @@ public class DatabaseProcessor
         builder.deleteCharAt( builder.length() - 1 );
 
         // query id for installation in directory "installationDir"
-        int id = getInstallationId( installationDir );
-
-        PreparedStatement statement = null;
-        try
+        final int id = getInstallationId( installationDir );
+        new Transaction<Void>( pooledDatasource, autoCommit )
         {
-            statement = getConnection().prepareStatement( builder.toString() );
-            int i = 0;
-
-            // iterate again over every entry in the map we have aka every date line with a sum
-            for ( Entry<String, List<SumEntry>> sumColumnsEntry : sumsColumns.entrySet() )
+            @Override
+            public Void action( Connection connection )
+                throws SQLException
             {
-                for ( SumEntry sumEntry : sumColumnsEntry.getValue() )
+                PreparedStatement statement = null;
+                try
                 {
-                    statement.setInt( ++i, id );
-                    statement.setTimestamp( ++i, new java.sql.Timestamp( sumEntry.getDate().getTime() ) );
-                    statement.setString( ++i, sumColumnsEntry.getKey() );
-                    statement.setDouble( ++i, sumEntry.getDaySum() );
+                    statement = connection.prepareStatement( builder.toString() );
+                    int i = 0;
+
+                    // iterate again over every entry in the map we have aka every date line with a sum
+                    for ( Entry<String, List<SumEntry>> sumColumnsEntry : sumsColumns.entrySet() )
+                    {
+                        for ( SumEntry sumEntry : sumColumnsEntry.getValue() )
+                        {
+                            statement.setInt( ++i, id );
+                            statement.setTimestamp( ++i, new java.sql.Timestamp( sumEntry.getDate().getTime() ) );
+                            statement.setString( ++i, sumColumnsEntry.getKey() );
+                            statement.setDouble( ++i, sumEntry.getDaySum() );
+                        }
+                    }
+                    int count = statement.executeUpdate();
+                    LOG.info( formatString( "Rows affected: {}", count ) );
                 }
+                finally
+                {
+                    if ( statement != null )
+                    {
+                        statement.close();
+                    }
+                }
+                return null;
             }
-            int count = statement.executeUpdate();
-            LOG.info( formatString( "Rows affected: {}", count ) );
-        }
-        finally
-        {
-            if ( statement != null )
-            {
-                statement.close();
-            }
-        }
+        }.call();
     }
 
-    public void updateMd5Sum( File csvFile, String newMd5Sum )
-        throws SQLException
+    public void updateFileAge( final File csvFile, final DateTime dateTime )
+        throws SQLException, IOException
+    {
+        LOG.info( formatString( "Writing to DB file age for {}, installationEntry:  {}", csvFile, dateTime ) );
+
+        final String updateQuery = "update dateien set datum = ? where dateiname = ?";
+        final String insertQuery = "insert into dateien (datum) values (?) where dateiname = ?";
+        new Transaction<Void>( pooledDatasource, autoCommit )
+        {
+            @Override
+            public Void action( Connection connection )
+                throws SQLException
+            {
+                PreparedStatement statement = null;
+                try
+                {
+                    try
+                    {
+                        // update
+                        statement = connection.prepareStatement( updateQuery );
+                        statement.setTimestamp( 1, new Timestamp( dateTime.toDate().getTime() ) );
+                        statement.setString( 2, csvFile.toString() );
+                        statement.executeUpdate();
+                    }
+                    catch ( SQLException e )
+                    {
+                        // insert
+                        statement = connection.prepareStatement( insertQuery );
+                        statement.setTimestamp( 1, new Timestamp( dateTime.toDate().getTime() ) );
+                        statement.setString( 2, csvFile.toString() );
+                        statement.executeUpdate();
+                    }
+                }
+                finally
+                {
+                    if ( statement != null )
+                    {
+                        statement.close();
+                    }
+                }
+                return null;
+            }
+        }.call();
+    }
+
+    public void updateMd5Sum( final File csvFile, final String newMd5Sum )
+        throws SQLException, IOException
     {
         LOG.info( formatString( "Writing to DB MD5 sum for {}, installationEntry:  {}", csvFile, newMd5Sum ) );
 
-        String insertQuery = "insert into dateien (dateiname, md5sum, fertig) values (?, ?, ?)";
-        String updateQuery = "update dateien set md5sum = ? where dateiname = ?";
-
-        PreparedStatement statement = null;
-        try
+        final String insertQuery = "insert into dateien (dateiname, md5sum, fertig) values (?, ?, ?)";
+        final String updateQuery = "update dateien set md5sum = ? where dateiname = ?";
+        new Transaction<Void>( pooledDatasource, autoCommit )
         {
-            // query table if we already have a md5sum saved for this filename
-            String oldMd5Sum = getMd5Sum( csvFile );
-            if ( oldMd5Sum == null )
+            @Override
+            public Void action( Connection connection )
+                throws SQLException, IOException
             {
-                // there is no md5sum saved for this filename, due to null not being allowed for md5sum by the db, this
-                // will be an insert
-                statement = getConnection().prepareStatement( insertQuery );
-                statement.setString( 1, csvFile.toString() );
-                statement.setString( 2, newMd5Sum );
-                statement.setBoolean( 3, false );
+                PreparedStatement statement = null;
+                try
+                {
+                    // query table if we already have a md5sum saved for this filename
+                    String oldMd5Sum = getMd5Sum( csvFile );
+                    if ( oldMd5Sum == null )
+                    {
+                        // there is no md5sum saved for this filename, due to null not being allowed for md5sum by the
+                        // db, this
+                        // will be an insert
+                        statement = connection.prepareStatement( insertQuery );
+                        statement.setString( 1, csvFile.toString() );
+                        statement.setString( 2, newMd5Sum );
+                        statement.setBoolean( 3, false );
+                    }
+                    else
+                    {
+                        // there already is a record with this filename, we got a valid md5sum, so statement will be an
+                        // update
+                        statement = connection.prepareStatement( updateQuery );
+                        statement.setString( 1, newMd5Sum );
+                        statement.setString( 2, csvFile.toString() );
+                    }
+                    statement.executeUpdate();
+                }
+                finally
+                {
+                    if ( statement != null )
+                    {
+                        statement.close();
+                    }
+                }
+                return null;
             }
-            else
-            {
-                // there already is a record with this filename, we got a valid md5sum, so statement will be an update
-                statement = getConnection().prepareStatement( updateQuery );
-                statement.setString( 1, newMd5Sum );
-                statement.setString( 2, csvFile.toString() );
-            }
-            statement.executeUpdate();
-        }
-        finally
-        {
-            if ( statement != null )
-            {
-                statement.close();
-            }
-        }
+        }.call();
     }
 
-    public void markAsDone( File csvFile )
-        throws SQLException
+    public void markAsDone( final File csvFile )
+        throws SQLException, IOException
     {
         LOG.info( formatString( "Writing to DB table {}, csvFile: {}", FILES_TABLE, csvFile ) );
 
-        String query = formatString( "update {} set fertig = ? where dateiname = ?", FILES_TABLE ).toString();
-        PreparedStatement stat = null;
-        try
+        final String query = formatString( "update {} set fertig = ? where dateiname = ?", FILES_TABLE ).toString();
+        new Transaction<Void>( pooledDatasource, autoCommit )
         {
-            stat = getConnection().prepareStatement( query );
-            stat.setBoolean( 1, true );
-            stat.setString( 2, csvFile.toString() );
-            stat.executeUpdate();
-        }
-        finally
-        {
-            stat.close();
-        }
+            @Override
+            public Void action( Connection connection )
+                throws SQLException
+            {
+                PreparedStatement stat = null;
+                try
+                {
+                    stat = connection.prepareStatement( query );
+                    stat.setBoolean( 1, true );
+                    stat.setString( 2, csvFile.toString() );
+                    stat.executeUpdate();
+                }
+                finally
+                {
+                    stat.close();
+                }
+                return null;
+            }
+        }.call();
     }
 
     /**
@@ -366,37 +511,45 @@ public class DatabaseProcessor
      * @return
      * @throws SQLException
      */
-    public boolean isDone( File csvFile )
-        throws SQLException
+    public boolean isDone( final File csvFile )
+        throws SQLException, IOException
     {
-        String selectQuery = formatString( "select fertig from {} where dateiname = ?", FILES_TABLE ).toString();
+        final String selectQuery = formatString( "select fertig from {} where dateiname = ?", FILES_TABLE ).toString();
+        return new Transaction<Boolean>( pooledDatasource, autoCommit )
+        {
+            @Override
+            public Boolean action( Connection connection )
+                throws SQLException
+            {
+                ResultSet rs = null;
+                boolean isDone = false;
+                PreparedStatement statement = null;
+                try
+                {
+                    statement = connection.prepareStatement( selectQuery );
+                    statement.setString( 1, csvFile.toString() );
+                    rs = statement.executeQuery();
+                    // we have an entry in the db for this file, now lets look whether it is done or not
+                    if ( rs.next() )
+                    {
+                        isDone = rs.getBoolean( 1 );
+                    }
+                }
+                finally
+                {
+                    if ( rs != null )
+                    {
+                        rs.close();
+                    }
+                    if ( statement != null )
+                    {
+                        statement.close();
+                    }
+                }
+                return isDone;
+            }
+        }.call();
 
-        ResultSet rs = null;
-        boolean isDone = false;
-        PreparedStatement statement = null;
-        try
-        {
-            statement = getConnection().prepareStatement( selectQuery );
-            statement.setString( 1, csvFile.toString() );
-            rs = statement.executeQuery();
-            // we have an entry in the db for this file, now lets look whether it is done or not
-            if ( rs.next() )
-            {
-                isDone = rs.getBoolean( 1 );
-            }
-        }
-        finally
-        {
-            if ( rs != null )
-            {
-                rs.close();
-            }
-            if ( statement != null )
-            {
-                statement.close();
-            }
-        }
-        return isDone;
     }
 
     /**
@@ -407,76 +560,129 @@ public class DatabaseProcessor
      * @return
      * @throws SQLException
      */
-    public String getMd5Sum( File csvFile )
-        throws SQLException
+    public String getMd5Sum( final File csvFile )
+        throws SQLException, IOException
     {
-
-        String sqlQuery = formatString( "select md5sum from {} where dateiname = ?", FILES_TABLE ).toString();
-
-        ResultSet rs = null;
-        String md5Sum = null;
-        PreparedStatement statement = null;
-        try
+        final String sqlQuery = formatString( "select md5sum from {} where dateiname = ?", FILES_TABLE ).toString();
+        return new Transaction<String>( pooledDatasource, autoCommit )
         {
-            statement = getConnection().prepareStatement( sqlQuery );
-            statement.setString( 1, csvFile.toString() );
-            rs = statement.executeQuery();
-            if ( rs.next() )
+            @Override
+            public String action( Connection connection )
+                throws SQLException
             {
-                md5Sum = rs.getString( 1 );
+                ResultSet rs = null;
+                String md5Sum = null;
+                PreparedStatement statement = null;
+                try
+                {
+                    statement = connection.prepareStatement( sqlQuery );
+                    statement.setString( 1, csvFile.toString() );
+                    rs = statement.executeQuery();
+                    if ( rs.next() )
+                    {
+                        md5Sum = rs.getString( 1 );
+                    }
+                }
+                finally
+                {
+                    if ( rs != null )
+                    {
+                        rs.close();
+                    }
+                    if ( statement != null )
+                    {
+                        statement.close();
+                    }
+                }
+                return md5Sum;
             }
-        }
-        finally
-        {
-            if ( rs != null )
-            {
-                rs.close();
-            }
-            if ( statement != null )
-            {
-                statement.close();
-            }
-        }
-        return md5Sum;
+        }.call();
     }
 
-    public ArrayList<InstallationEntry> getInstallationEntries()
-        throws SQLException
+    public DateTime getFileAge( final File csvFile )
+        throws SQLException, IOException
     {
-        String sqlQuery =
+        final String sqlQuery = formatString( "select datum from {} where dateiname = ?", FILES_TABLE ).toString();
+        return new Transaction<DateTime>( pooledDatasource, autoCommit )
+        {
+            @Override
+            public DateTime action( Connection connection )
+                throws SQLException
+            {
+                ResultSet rs = null;
+                Date fileAge = null;
+                PreparedStatement statement = null;
+                try
+                {
+                    statement = connection.prepareStatement( sqlQuery );
+                    statement.setString( 1, csvFile.toString() );
+                    rs = statement.executeQuery();
+                    if ( rs.next() )
+                    {
+                        fileAge = rs.getDate( 1 );
+                    }
+                }
+                finally
+                {
+                    if ( rs != null )
+                    {
+                        rs.close();
+                    }
+                    if ( statement != null )
+                    {
+                        statement.close();
+                    }
+                }
+                // new DateTime( null) == new DateTime() --> gt -36h
+                return new DateTime( fileAge );
+            }
+        }.call();
+    }
+
+    public List<InstallationEntry> getInstallationEntries()
+        throws SQLException, IOException
+    {
+        final String sqlQuery =
             formatString( "select id, verzeichnis, verbrauch_daysum_cols, verbrauch_sum_cols from {} where aktiv = 1",
                 INSTALLATIONS_TABLE ).toString();
-
-        ArrayList<InstallationEntry> installations = new ArrayList<InstallationEntry>();
-        PreparedStatement statement = null;
-        ResultSet rs = null;
-        try
+        return new Transaction<List<InstallationEntry>>( pooledDatasource, autoCommit )
         {
-            statement = getConnection().prepareStatement( sqlQuery );
-            rs = statement.executeQuery();
-            while ( rs.next() )
+            @Override
+            public List<InstallationEntry> action( Connection connection )
+                throws SQLException
             {
-                installations.add( new InstallationEntry( rs.getInt( 1 ), rs.getString( 2 ), rs.getString( 3 ), rs
-                    .getString( 4 ) ) );
+                ArrayList<InstallationEntry> installations = new ArrayList<InstallationEntry>();
+                PreparedStatement statement = null;
+                ResultSet rs = null;
+                try
+                {
+                    statement = connection.prepareStatement( sqlQuery );
+                    rs = statement.executeQuery();
+                    while ( rs.next() )
+                    {
+                        installations.add( new InstallationEntry( rs.getInt( 1 ), rs.getString( 2 ), rs.getString( 3 ),
+                            rs.getString( 4 ) ) );
+                    }
+                }
+                finally
+                {
+                    if ( rs != null )
+                    {
+                        rs.close();
+                    }
+                    if ( statement != null )
+                    {
+                        statement.close();
+                    }
+                }
+                return installations;
             }
-        }
-        finally
-        {
-            if ( rs != null )
-            {
-                rs.close();
-            }
-            if ( statement != null )
-            {
-                statement.close();
-            }
-        }
-        return installations;
+        }.call();
     }
 
     // ==========================================================================
 
-    public String getPowerQueryDay( int installionId, DateTime date )
+    public String powerQueryDay( int installionId, DateTime date )
     {
         return formatString(
             "SELECT datum, leistung * 0.001 " + //
@@ -490,7 +696,7 @@ public class DatabaseProcessor
             MYSQL_INTERNAL_DATE_FORMAT.print( date ) ).toString();
     }
 
-    public String getYieldQueryYear( int installionId, DateTime date )
+    public String yieldQueryYear( int installionId, DateTime date )
     {
         return formatString(
             "SELECT DATE_FORMAT(datum,'%M') as tag, daysum * 0.001 " + //
@@ -501,7 +707,7 @@ public class DatabaseProcessor
             MYSQL_INTERNAL_DATETIME_FORMAT.print( date ) ).toString();
     }
 
-    public String getYieldQueryWeek( int anlageId, DateTime date )
+    public String yieldQueryWeek( int anlageId, DateTime date )
     {
         return formatString(
             "SELECT DATE_FORMAT(datum,'%W') as tag, daysum * 0.001 " + //
@@ -512,7 +718,7 @@ public class DatabaseProcessor
             MYSQL_INTERNAL_DATETIME_FORMAT.print( date ) ).toString();
     }
 
-    public String getYieldQueryMonth( int installationId, DateTime date )
+    public String yieldQueryMonth( int installationId, DateTime date )
     {
         return formatString(
             "SELECT DATE_FORMAT(datum,'%e') as tag, daysum * 0.001 " + //

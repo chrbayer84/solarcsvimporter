@@ -6,14 +6,14 @@ import com.google.common.base.Objects;
 
 public class SumEntry
 {
-    private Date date;
+    private final Date date;
 
-    private Double daySum;
+    private final Double daySum;
 
     public SumEntry( Date date, Double daySum )
     {
-        this.setDate( date );
-        this.setDaySum( daySum );
+        this.date = date;
+        this.daySum = daySum;
     }
 
     @Override
@@ -43,18 +43,8 @@ public class SumEntry
         return daySum;
     }
 
-    public void setDaySum( Double daySum )
-    {
-        this.daySum = daySum;
-    }
-
     public Date getDate()
     {
         return date;
-    }
-
-    public void setDate( Date date )
-    {
-        this.date = date;
     }
 }

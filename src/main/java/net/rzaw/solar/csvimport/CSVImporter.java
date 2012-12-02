@@ -1,5 +1,7 @@
 package net.rzaw.solar.csvimport;
 
+import static net.rzaw.solar.StringFormatter.formatString;
+
 import java.io.Closeable;
 import java.io.File;
 import java.io.FilenameFilter;
@@ -7,7 +9,6 @@ import java.io.IOException;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
@@ -16,7 +17,6 @@ import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.regex.Pattern;
 
-import static net.rzaw.solar.StringFormatter.formatString;
 import net.rzaw.solar.db.DatabaseProcessor;
 
 import org.apache.commons.codec.digest.DigestUtils;
@@ -25,6 +25,7 @@ import org.apache.commons.io.filefilter.FileFileFilter;
 import org.apache.commons.io.filefilter.WildcardFileFilter;
 import org.apache.log4j.Logger;
 import org.h2.tools.Csv;
+import org.joda.time.DateTime;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
@@ -47,6 +48,8 @@ public class CSVImporter
 
     private static final Logger LOG = Logger.getLogger( CSVImporter.class );
 
+    private static final String FILE_OLD_AGE = "file.oldage";
+
     /*
      * date and time fields
      */
@@ -66,12 +69,16 @@ public class CSVImporter
 
     private final DatabaseProcessor databaseProcessor;
 
+    private final int fileOldAge;
+
     public CSVImporter( Properties properties )
-        throws SQLException
+        throws SQLException, IOException
     {
         // populate fields
         dateField = properties.getProperty( FIELD_DATE );
         timeField = properties.getProperty( FIELD_TIME );
+
+        fileOldAge = Integer.parseInt( properties.getProperty( FILE_OLD_AGE, "36" ) );
 
         String daysumFieldsString = properties.getProperty( FIELDS_DAYSUM );
         Preconditions.checkNotNull( daysumFieldsString );
@@ -107,18 +114,14 @@ public class CSVImporter
                 String oldMd5Sum = databaseProcessor.getMd5Sum( csvFile );
                 // calculate current md5sum from file content
                 String newMd5Sum = DigestUtils.md5Hex( Files.toString( csvFile, Charsets.UTF_8 ) );
-                // TODO get from file or db.
-                // DateTime age;
-                if ( newMd5Sum.equals( oldMd5Sum )
-                // && age.isAfter( new DateTime().minusHours( 36 ) )
-                )
+                DateTime fileAge = databaseProcessor.getFileAge( csvFile );
+                if ( newMd5Sum.equals( oldMd5Sum ) && fileAge.isBefore( new DateTime().minusHours( fileOldAge ) ) )
                 {
                     // the file did not change from the last iteration, this was
                     // the last data set for today
                     // mark this file as stable/done
                     databaseProcessor.markAsDone( csvFile );
-                    LOG.info( formatString( "Marked file {} as done, not processing again.",
-                        csvFileName ) );
+                    LOG.info( formatString( "Marked file {} as done, not processing again.", csvFileName ) );
                 }
                 else
                 {
@@ -165,6 +168,10 @@ public class CSVImporter
 
                     // or file has changed, update md5sum
                     databaseProcessor.updateMd5Sum( csvFile, newMd5Sum );
+                    // update file age
+
+                    // update file age
+                    databaseProcessor.updateFileAge( csvFile, new DateTime() );
                 }
             }
             else
@@ -404,8 +411,8 @@ public class CSVImporter
         databaseProcessor.close();
     }
 
-    public ArrayList<InstallationEntry> getInstallationEntries()
-        throws SQLException
+    public List<InstallationEntry> getInstallationEntries()
+        throws SQLException, IOException
     {
         return databaseProcessor.getInstallationEntries();
     }
