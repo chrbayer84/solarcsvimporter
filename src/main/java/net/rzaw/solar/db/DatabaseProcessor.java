@@ -234,11 +234,9 @@ public class DatabaseProcessor
         LOG.info( formatString( "Writing to DB table {} day sum, installationEntry: {}", tableName, installationDir ) );
 
         String placeholder = "(?, ?, ?, ?)";
-        String insertQueryStub =
-            formatString( "insert into {} (anlage, datum, typ, daysum) values ", tableName ).toString();
-        final StringBuilder builder = new StringBuilder( insertQueryStub );
+        final String replaceQuery =
+            formatString( "replace into {} (anlage, datum, typ, daysum) value (?, ?, ?, ?)", tableName ).toString();
 
-        LOG.info( formatString( "Statement for {}: {}", installationDir, builder.toString() ) );
         // don't proceed if the map is empty
         if ( daySums.isEmpty() )
         {
@@ -246,26 +244,12 @@ public class DatabaseProcessor
             return;
         }
 
-        // iterate over every entry in the map we have aka the maximum entry for today to add the ? fields for the
-        // statement
-        for ( Entry<String, SumEntry> sumColumnsEntry : daySums.entrySet() )
-        {
-            builder.append( placeholder ).append( "," );
-        }
-
-        if ( builder.length() == insertQueryStub.length() )
-        {
-            // there were no rows to add
-            return;
-        }
-
-        // delete the last ","
-        builder.deleteCharAt( builder.length() - 1 );
+        LOG.info( formatString( "Statements for {}: {}", installationDir, replaceQuery ) );
 
         // query id for installation in directory "installationDir"
         final int id = getInstallationId( installationDir );
 
-        new Transaction<Void>( pooledDatasource, autoCommit )
+        new Transaction<Void>( pooledDatasource, false )
         {
             @Override
             public Void action( Connection connection )
@@ -274,19 +258,20 @@ public class DatabaseProcessor
                 PreparedStatement statement = null;
                 try
                 {
-                    statement = connection.prepareStatement( builder.toString() );
-                    int i = 0;
+                    statement = connection.prepareStatement( replaceQuery.toString() );
 
                     // iterate again over every entry in the map we have aka every date line with a sum
                     for ( Entry<String, SumEntry> sumColumnsEntry : daySums.entrySet() )
                     {
+                        int i = 0;
                         statement.setInt( ++i, id );
                         statement.setTimestamp( ++i, new Timestamp( sumColumnsEntry.getValue().getDate().getTime() ) );
                         statement.setString( ++i, sumColumnsEntry.getKey() );
                         statement.setDouble( ++i, sumColumnsEntry.getValue().getDaySum() );
+                        statement.addBatch();
                     }
-                    int count = statement.executeUpdate();
-                    LOG.info( formatString( "Rows affected: {}", count ) );
+                    int[] count = statement.executeBatch();
+                    LOG.info( formatString( "REPLACE: Rows affected: {}", addArray( count ) ) );
                 }
                 finally
                 {
@@ -300,6 +285,16 @@ public class DatabaseProcessor
         }.call();
     }
 
+    private int addArray( int[] count )
+    {
+        int sum = 0;
+        for ( int i : count )
+        {
+            sum += i;
+        }
+        return sum;
+    }
+
     @SuppressWarnings( "unused" )
     public void updateSumSameColumns( final String installationDir, final String tableName,
                                       final Map<String, List<SumEntry>> sumsColumns )
@@ -309,10 +304,8 @@ public class DatabaseProcessor
             installationDir ) );
 
         String placeholder = "(?, ?, ?, ?)";
-        String insertQueryStub =
-            formatString( "insert into {} (anlage, datum, typ, leistung) values ", tableName ).toString();
-        final StringBuilder builder = new StringBuilder( insertQueryStub );
-        LOG.info( formatString( "Statement for {}: {}", installationDir, builder.toString() ) );
+        final String replaceQuery =
+            formatString( "replace into {} (anlage, datum, typ, leistung) value (?, ?, ?, ?)", tableName ).toString();
 
         // don't proceed if the map is empty
         if ( sumsColumns.isEmpty() )
@@ -320,28 +313,10 @@ public class DatabaseProcessor
             return;
         }
 
-        // iterate over every entry in the map we have aka every date line with a sum to add the ? fields for the
-        // statement
-        for ( Entry<String, List<SumEntry>> sumColumnsEntry : sumsColumns.entrySet() )
-        {
-            for ( SumEntry sumEntry : sumColumnsEntry.getValue() )
-            {
-                builder.append( placeholder ).append( "," );
-            }
-        }
-
-        if ( builder.length() == insertQueryStub.length() )
-        {
-            // there were no rows to add
-            return;
-        }
-
-        // delete the last ","
-        builder.deleteCharAt( builder.length() - 1 );
-
+        LOG.info( formatString( "Statements for {}: {}", installationDir, replaceQuery ) );
         // query id for installation in directory "installationDir"
         final int id = getInstallationId( installationDir );
-        new Transaction<Void>( pooledDatasource, autoCommit )
+        new Transaction<Void>( pooledDatasource, false )
         {
             @Override
             public Void action( Connection connection )
@@ -350,22 +325,23 @@ public class DatabaseProcessor
                 PreparedStatement statement = null;
                 try
                 {
-                    statement = connection.prepareStatement( builder.toString() );
-                    int i = 0;
+                    statement = connection.prepareStatement( replaceQuery );
 
                     // iterate again over every entry in the map we have aka every date line with a sum
                     for ( Entry<String, List<SumEntry>> sumColumnsEntry : sumsColumns.entrySet() )
                     {
                         for ( SumEntry sumEntry : sumColumnsEntry.getValue() )
                         {
+                            int i = 0;
                             statement.setInt( ++i, id );
                             statement.setTimestamp( ++i, new java.sql.Timestamp( sumEntry.getDate().getTime() ) );
                             statement.setString( ++i, sumColumnsEntry.getKey() );
                             statement.setDouble( ++i, sumEntry.getDaySum() );
+                            statement.addBatch();
                         }
                     }
-                    int count = statement.executeUpdate();
-                    LOG.info( formatString( "Rows affected: {}", count ) );
+                    int[] count = statement.executeBatch();
+                    LOG.info( formatString( "INSERT: Rows affected: {}", addArray( count ) ) );
                 }
                 finally
                 {

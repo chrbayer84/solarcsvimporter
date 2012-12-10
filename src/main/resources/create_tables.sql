@@ -106,3 +106,9 @@ ALTER TABLE `leistung`
 
 ALTER TABLE `leistung_verbrauch`
   ADD CONSTRAINT `leistung_verbrauch_ibfk_1` FOREIGN KEY (`anlage`) REFERENCES `anlage` (`id`);
+  
+CREATE UNIQUE INDEX uniq_leistung ON leistung (anlage, datum, typ);
+CREATE UNIQUE INDEX uniq_leistung_verbrauch ON leistung_verbrauch (anlage, datum, typ);
+CREATE UNIQUE INDEX uniq_ertrag ON ertrag (anlage, datum, typ);
+CREATE UNIQUE INDEX uniq_verbrauch ON verbrauch (anlage, datum, typ);
+  

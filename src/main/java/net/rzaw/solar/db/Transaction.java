@@ -43,6 +43,10 @@ public abstract class Transaction<T>
         try
         {
             result = action( connection );
+            if ( !autoCommit )
+            {
+                connection.commit();
+            }
         }
         finally
         {
