@@ -19,7 +19,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
 
-import net.rzaw.solar.csvimport.CSVImporter;
 import net.rzaw.solar.csvimport.InstallationEntry;
 import net.rzaw.solar.csvimport.SumEntry;
 
@@ -34,7 +33,7 @@ import com.mchange.v2.c3p0.ComboPooledDataSource;
 public class DatabaseProcessor
     implements Closeable
 {
-    private static final Logger LOG = Logger.getLogger( CSVImporter.class );
+    private static final Logger LOG = Logger.getLogger( DatabaseProcessor.class );
 
     public static final String POWERS_TABLE = "leistung";
 
@@ -226,14 +225,12 @@ public class DatabaseProcessor
         }.call();
     }
 
-    @SuppressWarnings( "unused" )
     public void updateDaySumColumns( final String installationDir, final String tableName,
                                      final Map<String, SumEntry> daySums )
         throws SQLException, IOException
     {
         LOG.info( formatString( "Writing to DB table {} day sum, installationEntry: {}", tableName, installationDir ) );
 
-        String placeholder = "(?, ?, ?, ?)";
         final String replaceQuery =
             formatString( "replace into {} (anlage, datum, typ, daysum) value (?, ?, ?, ?)", tableName ).toString();
 
@@ -265,7 +262,9 @@ public class DatabaseProcessor
                     {
                         int i = 0;
                         statement.setInt( ++i, id );
-                        statement.setTimestamp( ++i, new Timestamp( sumColumnsEntry.getValue().getDate().getTime() ) );
+                        // set date for daysum to midnight
+                        statement.setTimestamp( ++i, new Timestamp( new DateTime( sumColumnsEntry.getValue().getDate() )
+                            .toDateMidnight().toDate().getTime() ) );
                         statement.setString( ++i, sumColumnsEntry.getKey() );
                         statement.setDouble( ++i, sumColumnsEntry.getValue().getDaySum() );
                         statement.addBatch();
@@ -295,7 +294,6 @@ public class DatabaseProcessor
         return sum;
     }
 
-    @SuppressWarnings( "unused" )
     public void updateSumSameColumns( final String installationDir, final String tableName,
                                       final Map<String, List<SumEntry>> sumsColumns )
         throws SQLException, IOException
@@ -303,7 +301,6 @@ public class DatabaseProcessor
         LOG.info( formatString( "Writing to DB table {} sum for same columns, installationEntry: {}", tableName,
             installationDir ) );
 
-        String placeholder = "(?, ?, ?, ?)";
         final String replaceQuery =
             formatString( "replace into {} (anlage, datum, typ, leistung) value (?, ?, ?, ?)", tableName ).toString();
 
