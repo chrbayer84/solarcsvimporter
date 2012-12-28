@@ -2,87 +2,87 @@
 <body>
 
 <h1>SolarImporter v1.2</h1>
+<h2>Changelog</h2>
+<p>2012-12-28  Christian Bayer <chrbayer84@googlemail.com>
+<br>
+<br>  * .../java/net/rzaw/solar/db/DatabaseProcessor.java
+<br>  * Changed timestamp for daysums to be always on 0:00am to avoid duplicate daysum entries per day when using file expiry > 24h
+<p>2012-12-10  Christian Bayer <chrbayer84@googlemail.com>
+<br>
+<br>  * .../java/net/rzaw/solar/db/DatabaseProcessor.java,
+<br>  src/main/java/net/rzaw/solar/db/Transaction.java,
+<br>  src/main/resources/create_tables.sql:
+<br>* Fixed duplicate adding of records when files change, now uses mysql 'replace into' to avoid duplicates
+<p>2012-12-02  Christian Bayer <chrbayer84@googlemail.com>
+<br>
+<br>  * .../java/net/rzaw/solar/ImportChartResult.java,
+<br>  src/main/java/net/rzaw/solar/Runtime.java,
+<br>  .../java/net/rzaw/solar/charts/ChartProducer.java,
+<br>  .../rzaw/solar/charts/RzawJDBCCategoryDataset.java,
+<br>  .../net/rzaw/solar/charts/RzawJDBCXYDataset.java,
+<br>  .../java/net/rzaw/solar/csvimport/CSVImporter.java,
+<br>  .../java/net/rzaw/solar/csvimport/SumEntry.java,
+<br>  .../java/net/rzaw/solar/db/DatabaseProcessor.java,
+<br>  src/main/java/net/rzaw/solar/db/Transaction.java: 
+<br>* Support for 36h delay before marking a file as "done" - proper transaction isolation and closing using transaction callable
+<p>2012-11-21  Christian Bayer <chrbayer84@googlemail.com>
+<br>
+<br>  * pom.xml, src/main/java/net/rzaw/solar/Runtime.java,
+<br>  .../java/net/rzaw/solar/db/DatabaseProcessor.java,
+<br>  src/main/resources/log4j.properties:
+<br>* Use ThreadPoolExecutor to execute tasks: Use c3p0 pooled jdbc connections
+<p>2012-11-20  Christian Bayer <chrbayer84@googlemail.com>
+<br>
+<br>  * src/main/java/net/rzaw/solar/Runtime.java,
+<br>  .../java/net/rzaw/solar/charts/ChartProducer.java,
+<br>  .../java/net/rzaw/solar/db/DatabaseProcessor.java: * Charts refined, removed
+<br>  captions everywhere, correct legend 
+<br>* split importing CSV data and producing charts up into seperate tasks that depend from the installation and can be executed in parallel per installation 
+<br>* Use ExecutorService for executing all tasks in parallel
+<br>* cleanup, removed lots of obsolete db queries and disabled code
+<p>2012-11-18  Christian Bayer <chrbayer84@googlemail.com>
+<br>
+<br>  * src/main/java/net/rzaw/solar/Runtime.java,
+<br>  .../java/net/rzaw/solar/charts/ChartProducer.java,
+<br>  .../rzaw/solar/charts/RzawJDBCCategoryDataset.java,
+<br>  .../net/rzaw/solar/charts/RzawJDBCXYDataset.java,
+<br>  .../java/net/rzaw/solar/csvimport/CSVImporter.java,
+<br>  .../java/net/rzaw/solar/db/DatabaseProcessor.java,
+<br>  src/main/resources/log4j.properties:
+<br>* Charting support for 4 base queries
+<br>* Better logging added all over the place, now also writes Errors to log ;) 
+<br>* usual cleanup
+<p>2012-11-14  Christian Bayer <chrbayer84@googlemail.com>
+<br>
+<br>  * pom.xml, src/main/java/net/rzaw/solar/Runtime.java,
+<br>  src/main/java/net/rzaw/solar/csvimport/CSVImporter.java,
+<br>  src/main/resources/solarcsvimporter.bat:
+<br>* increased default memory footprint for JVM
+<br>* setting correct version 1.2-SNAPSHOT in pom
+<br>* disabled charting for now
+<br>* solarcsvimporter-1: Joda date parsing fails when importing
+<br>* always use  local time
+<p>2012-10-21  Christian Bayer <chrbayer84@googlemail.com>
+<br>
+<br>  * README.md, pom.xml, src/main/assembly/assembly.xml,
+<br>  src/main/java/net/rzaw/solar/Runtime.java,
+<br>  src/main/java/net/rzaw/solar/StringFormatter.java,
+<br>  .../java/net/rzaw/solar/charts/ChartProducer.java,
+<br>  .../rzaw/solar/charts/RzawJDBCCategoryDataset.java,
+<br>  .../net/rzaw/solar/charts/RzawJDBCXYDataset.java,
+<br>  .../java/net/rzaw/solar/csvimport/CSVImporter.java,
+<br>  .../rzaw/solar/csvimport/InstallationEntry.java,
+<br>  .../java/net/rzaw/solar/csvimport/SumEntry.java,
+<br>  .../java/net/rzaw/solar/db/DatabaseProcessor.java,
+<br>  src/main/resources/config.properties, src/main/resources/create_tables.sql,
+<br>  src/main/resources/log4j.properties, src/main/resources/solarcsvimporter.bat,
+<br>  .../net/rzaw/solar/csvimport/_CSVImporter.java,
+<br>  src/test/resources/min110527.csv, src/test/resources/min110901.csv,
+<br>  src/test/resources/min120209.csv, src/test/resources/minEmpty.csv:
+<br>* Initial import, v1.2-SNAPSHOT
+
 <p>Bugfix falls leere Strings/Felder in verbrauch_daysum_cols und
 verbrauch_sum_cols stehen, Integer-ParseException verhindert.
-<h2>Changelog</h2>
-2012-12-10  Christian Bayer <chrbayer84@googlemail.com>
-
-  * .../java/net/rzaw/solar/db/DatabaseProcessor.java,
-  src/main/java/net/rzaw/solar/db/Transaction.java,
-  src/main/resources/create_tables.sql: Fixed duplicate adding of records when
-  files change, now uses mysql 'replace into' to avoid duplicates
-
-2012-12-02  Christian Bayer <chrbayer84@googlemail.com>
-
-  * .../java/net/rzaw/solar/ImportChartResult.java,
-  src/main/java/net/rzaw/solar/Runtime.java,
-  .../java/net/rzaw/solar/charts/ChartProducer.java,
-  .../rzaw/solar/charts/RzawJDBCCategoryDataset.java,
-  .../net/rzaw/solar/charts/RzawJDBCXYDataset.java,
-  .../java/net/rzaw/solar/csvimport/CSVImporter.java,
-  .../java/net/rzaw/solar/csvimport/SumEntry.java,
-  .../java/net/rzaw/solar/db/DatabaseProcessor.java,
-  src/main/java/net/rzaw/solar/db/Transaction.java: - Support for 36h delay
-  before marking a file as "done" - proper transaction isolation and closing
-  using transaction callable
-
-2012-11-21  Christian Bayer <chrbayer84@googlemail.com>
-
-  * pom.xml, src/main/java/net/rzaw/solar/Runtime.java,
-  .../java/net/rzaw/solar/db/DatabaseProcessor.java,
-  src/main/resources/log4j.properties: - Use ThreadPoolExecutor to execute
-  tasks: Use c3p0 pooled jdbc connections
-
-2012-11-20  Christian Bayer <chrbayer84@googlemail.com>
-
-  * src/main/java/net/rzaw/solar/Runtime.java,
-  .../java/net/rzaw/solar/charts/ChartProducer.java,
-  .../java/net/rzaw/solar/db/DatabaseProcessor.java: * Charts refined, removed
-  captions everywhere, correct legend * split importing CSV data and up
-  producing charts into seperate tasks that depend from the installation and
-  can be executed in parallel per installation * Use ExecutorService for
-  executing all tasks in parallel * cleanup, removed lots of obsolete db
-  queries and disabled code
-
-2012-11-18  Christian Bayer <chrbayer84@googlemail.com>
-
-  * src/main/java/net/rzaw/solar/Runtime.java,
-  .../java/net/rzaw/solar/charts/ChartProducer.java,
-  .../rzaw/solar/charts/RzawJDBCCategoryDataset.java,
-  .../net/rzaw/solar/charts/RzawJDBCXYDataset.java,
-  .../java/net/rzaw/solar/csvimport/CSVImporter.java,
-  .../java/net/rzaw/solar/db/DatabaseProcessor.java,
-  src/main/resources/log4j.properties: * Charting support for 4 base queries *
-  Better logging added all over the place, now also writes Errors to log ;) *
-  usual cleanup
-
-2012-11-14  Christian Bayer <chrbayer84@googlemail.com>
-
-  * pom.xml, src/main/java/net/rzaw/solar/Runtime.java,
-  src/main/java/net/rzaw/solar/csvimport/CSVImporter.java,
-  src/main/resources/solarcsvimporter.bat: * increased default memory footprint
-  for JVM * setting correct version 1.2-SNAPSHOT in pom * disabled charting for
-  now solarcsvimporter-1: Joda date parsing fails when importing * always use
-  local time
-
-2012-10-21  Christian Bayer <chrbayer84@googlemail.com>
-
-  * README.md, pom.xml, src/main/assembly/assembly.xml,
-  src/main/java/net/rzaw/solar/Runtime.java,
-  src/main/java/net/rzaw/solar/StringFormatter.java,
-  .../java/net/rzaw/solar/charts/ChartProducer.java,
-  .../rzaw/solar/charts/RzawJDBCCategoryDataset.java,
-  .../net/rzaw/solar/charts/RzawJDBCXYDataset.java,
-  .../java/net/rzaw/solar/csvimport/CSVImporter.java,
-  .../rzaw/solar/csvimport/InstallationEntry.java,
-  .../java/net/rzaw/solar/csvimport/SumEntry.java,
-  .../java/net/rzaw/solar/db/DatabaseProcessor.java,
-  src/main/resources/config.properties, src/main/resources/create_tables.sql,
-  src/main/resources/log4j.properties, src/main/resources/solarcsvimporter.bat,
-  .../net/rzaw/solar/csvimport/_CSVImporter.java,
-  src/test/resources/min110527.csv, src/test/resources/min110901.csv,
-  src/test/resources/min120209.csv, src/test/resources/minEmpty.csv: Initial
-  import, v1.2-SNAPSHOT
 
 <h1>SolarImporter v1.1</h1>
 
