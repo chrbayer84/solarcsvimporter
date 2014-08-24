@@ -1,0 +1,17 @@
+language: java
+
+jdk:
+- openjdk7
+- oraclejdk7
+- oraclejdk8
+
+env:
+  - DB=mysql
+
+before_script:
+  - mysql -e "create database IF NOT EXISTS solarcsvimporter;" -uroot
+  - mysql solarcsvimporter -u root < src/main/resources/create_tables.sql
+
+notifications:
+  email:
+    - chrbayer84@googlemail.com
