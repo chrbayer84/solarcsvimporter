@@ -4,12 +4,12 @@
 -- Tabellenstruktur für Tabelle `anlage`
 --
 
-drop TABLE `verbrauch`;
-drop TABLE `leistung_verbrauch`;
-drop TABLE `leistung`;
-drop TABLE `ertrag`;
-drop TABLE `dateien`;
-drop TABLE `anlage`;
+drop TABLE IF TABLE `verbrauch`;
+drop TABLE IF TABLE `leistung_verbrauch`;
+drop TABLE IF TABLE `leistung`;
+drop TABLE IF TABLE `ertrag`;
+drop TABLE IF TABLE `dateien`;
+drop TABLE IF TABLE `anlage`;
 
 CREATE TABLE IF NOT EXISTS `anlage` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
