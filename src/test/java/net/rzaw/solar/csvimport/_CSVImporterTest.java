@@ -23,7 +23,7 @@ import com.google.common.collect.Maps;
 import com.google.common.io.Files;
 import com.google.common.io.InputSupplier;
 
-public class _CSVImporter
+public class _CSVImporterTest
 {
     private static String[] testFiles = { "min110527.csv", "min110901.csv", "minEmpty.csv", "ignore.csv",
         "min120209.csv" };
