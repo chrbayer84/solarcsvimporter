@@ -62,7 +62,7 @@
 			<version>4.8.1</version>
 			<scope>test</scope>
 		</dependency>
-		<dependency>
+<!--		<dependency>
 			<groupId>commons-codec</groupId>
 			<artifactId>commons-codec</artifactId>
 			<version>1.5</version>

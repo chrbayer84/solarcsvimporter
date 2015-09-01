@@ -63,7 +63,6 @@ public class _CSVImporterTest
         Map<String, File> expectedFiles = new HashMap<String, File>();
         for ( String filename : expectedFileNames )
         {
-            // pulls data from core.reporting package
             path.mkdirs();
             File to = new File( path, filename );
             final InputStream stream = Thread.currentThread().getContextClassLoader().getResourceAsStream( filename );
